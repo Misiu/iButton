@@ -6,7 +6,7 @@
 #endif
 
 static constexpr uint32_t SERIAL_BAUD = 9600;
-static constexpr size_t COMMAND_SIZE = 10;
+static constexpr size_t COMMAND_SIZE = 11;
 static constexpr uint32_t TOUCH_TIMEOUT_MS = 5000;
 
 OneWire oneWire(IBUTTON_PIN);
@@ -43,9 +43,8 @@ void printRom(const uint8_t rom[8]) {
 }
 
 bool writeRw1990(const uint8_t rom[8]) {
-  // RW1990/TM1990-compatible sequence commonly used by writable DS1990 clones:
-  // 0xD1 enables write mode, then 0xD5 writes the 8 ROM bytes bit-by-bit.
-  // A read-back is always required before reporting success.
+  // Provisional RW1990/TM1990-compatible sequence. Verify against the legacy
+  // programmer firmware / actual tokens before treating this as production-ready.
   if (!oneWire.reset()) return false;
   oneWire.write(0xD1);
   oneWire.write_bit(0);
@@ -87,7 +86,6 @@ void handleWrite(const uint8_t command[COMMAND_SIZE]) {
     return;
   }
 
-  // Wait until a writable token is physically present before attempting programming.
   uint8_t currentRom[8];
   if (!waitForRom(currentRom, TOUCH_TIMEOUT_MS)) {
     Serial.println("ERROR NO_BUTTON");
