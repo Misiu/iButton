@@ -30,7 +30,29 @@ The iButton ROM is 8 bytes: family byte `0x01`, six serial-number bytes and Dall
 
 Seeed Studio XIAO ESP32-C3.
 
-The 1-Wire data GPIO is configurable in `firmware/platformio.ini` via `IBUTTON_PIN`. It is currently set to GPIO2; this remains provisional until the final wiring is selected.
+### Probe wiring
+
+The firmware uses the following XIAO ESP32-C3 pins:
+
+| Function | XIAO pin | ESP32-C3 GPIO |
+| --- | --- | --- |
+| iButton 1-Wire data | D2 | GPIO4 |
+| Probe LED control | D4 | GPIO6 |
+| Ground | GND | GND |
+
+The D2/D4 labels intentionally mirror the two signal-pin labels used by the legacy Arduino Nano programmer, although their underlying GPIO numbers are different on the XIAO ESP32-C3.
+
+Connect the probe by **function**, not by assumed wire color. Probe cable colors differ between variants. The metal outer contact is the iButton ground contact and the center contact carries the 1-Wire signal.
+
+The probe LED must use its existing current-limiting resistor/driver circuit. Do not connect a 5 V LED supply directly to an ESP32-C3 GPIO; XIAO ESP32-C3 GPIO is 3.3 V logic.
+
+The pins are configurable in `firmware/platformio.ini` using `IBUTTON_PIN` and `LED_PIN`. `LED_ACTIVE_HIGH` controls LED polarity and is currently set to `1`; change it to `0` if the actual probe circuit turns the LED on with a LOW level.
+
+### Operation
+
+For both **Read** and **Write**, the firmware turns the probe LED on and waits up to 5 seconds for an iButton. If no valid iButton is detected within 5 seconds, the LED is turned off and `ERROR NO_BUTTON` is returned.
+
+For **Read**, the LED is turned off immediately after a valid ROM is read. For **Write**, the LED stays on while the detected writable iButton is programmed and verified, then turns off before the result is returned.
 
 The RW1990/TM1990 write sequence in the new ESP32-C3 firmware is provisional until verified against the original Arduino firmware or tested with the actual writable tokens. The web application's legacy serial protocol does not depend on this and can already be tested with the existing Arduino Nano programmer.
 
