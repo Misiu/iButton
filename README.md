@@ -32,21 +32,30 @@ Seeed Studio XIAO ESP32-C3.
 
 ### Probe wiring
 
-The firmware uses the following XIAO ESP32-C3 pins:
+The legacy programmer was measured with the probe connected. Arduino Nano D2 sits at approximately 5 V while the LED is off, drops to approximately 0 V while the LED is on, and returns to approximately 5 V afterwards. Together with the resistor in the LED branch, this identifies D2 as an active-low LED sink. The other signal pin, D4, is therefore used for 1-Wire.
 
-| Function | XIAO pin | ESP32-C3 GPIO |
-| --- | --- | --- |
-| iButton 1-Wire data | D2 | GPIO4 |
-| Probe LED control | D4 | GPIO6 |
-| Ground | GND | GND |
+The XIAO firmware keeps the same D2/D4 board labels while using their XIAO ESP32-C3 GPIO mappings:
 
-The D2/D4 labels intentionally mirror the two signal-pin labels used by the legacy Arduino Nano programmer, although their underlying GPIO numbers are different on the XIAO ESP32-C3.
+| Function | XIAO pin | ESP32-C3 GPIO | Connection |
+| --- | --- | --- | --- |
+| iButton 1-Wire data | D4 | GPIO6 | Probe 1-Wire data |
+| Probe LED control | D2 | GPIO4 | LED cathode/control side, active-low |
+| LED supply | 3V3 | 3.3 V | Existing probe LED resistor/anode supply |
+| Ground | GND | GND | Probe/iButton ground |
+
+The LED branch is intentionally powered from XIAO `3V3`, not from 5 V. Keep the probe's existing series/current-limiting resistor in circuit. With the measured active-low arrangement, GPIO4 is HIGH while the LED is off and LOW while the LED is on, so the GPIO sinks the LED current. Using 3.3 V instead of the legacy 5 V reduces LED current and may reduce brightness, which is acceptable for the status indicator.
+
+Do **not** connect the legacy 5 V LED supply to an ESP32-C3 GPIO. All GPIO-side signals in the new programmer are 3.3 V.
 
 Connect the probe by **function**, not by assumed wire color. Probe cable colors differ between variants. The metal outer contact is the iButton ground contact and the center contact carries the 1-Wire signal.
 
-The probe LED must use its existing current-limiting resistor/driver circuit. Do not connect a 5 V LED supply directly to an ESP32-C3 GPIO; XIAO ESP32-C3 GPIO is 3.3 V logic.
+Firmware pin configuration in `firmware/platformio.ini`:
 
-The pins are configurable in `firmware/platformio.ini` using `IBUTTON_PIN` and `LED_PIN`. `LED_ACTIVE_HIGH` controls LED polarity and is currently set to `1`; change it to `0` if the actual probe circuit turns the LED on with a LOW level.
+```ini
+-D IBUTTON_PIN=6
+-D LED_PIN=4
+-D LED_ACTIVE_HIGH=0
+```
 
 ### Operation
 
