@@ -2,7 +2,15 @@
 #include <OneWire.h>
 
 #ifndef IBUTTON_PIN
-#define IBUTTON_PIN 2
+#define IBUTTON_PIN 4
+#endif
+
+#ifndef LED_PIN
+#define LED_PIN 6
+#endif
+
+#ifndef LED_ACTIVE_HIGH
+#define LED_ACTIVE_HIGH 1
 #endif
 
 static constexpr uint32_t SERIAL_BAUD = 9600;
@@ -10,6 +18,11 @@ static constexpr size_t COMMAND_SIZE = 11;
 static constexpr uint32_t TOUCH_TIMEOUT_MS = 5000;
 
 OneWire oneWire(IBUTTON_PIN);
+
+void setProbeLed(bool on) {
+  const bool level = LED_ACTIVE_HIGH ? on : !on;
+  digitalWrite(LED_PIN, level ? HIGH : LOW);
+}
 
 uint8_t additiveChecksum(const uint8_t *data, size_t length) {
   uint8_t sum = 0;
@@ -71,8 +84,14 @@ bool writeRw1990(const uint8_t rom[8]) {
 }
 
 void handleRead() {
+  setProbeLed(true);
+
   uint8_t rom[8];
-  if (!waitForRom(rom, TOUCH_TIMEOUT_MS)) {
+  const bool found = waitForRom(rom, TOUCH_TIMEOUT_MS);
+
+  setProbeLed(false);
+
+  if (!found) {
     Serial.println("ERROR NO_BUTTON");
     return;
   }
@@ -86,13 +105,19 @@ void handleWrite(const uint8_t command[COMMAND_SIZE]) {
     return;
   }
 
+  setProbeLed(true);
+
   uint8_t currentRom[8];
   if (!waitForRom(currentRom, TOUCH_TIMEOUT_MS)) {
+    setProbeLed(false);
     Serial.println("ERROR NO_BUTTON");
     return;
   }
 
-  if (!writeRw1990(rom)) {
+  const bool written = writeRw1990(rom);
+  setProbeLed(false);
+
+  if (!written) {
     Serial.println("ERROR WRITE_FAILED");
     return;
   }
@@ -119,6 +144,8 @@ void processCommand(const uint8_t command[COMMAND_SIZE]) {
 }
 
 void setup() {
+  pinMode(LED_PIN, OUTPUT);
+  setProbeLed(false);
   Serial.begin(SERIAL_BAUD);
 }
 
