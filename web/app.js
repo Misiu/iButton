@@ -45,7 +45,7 @@ function serialToRom(value) {
 }
 
 function buildReadCommand() {
-  const command = [0x01, 0x01, 0, 0, 0, 0, 0, 0, 0];
+  const command = [0x01, 0x01, 0, 0, 0, 0, 0, 0, 0, 0];
   command.push(additiveChecksum(command));
   return new Uint8Array(command);
 }
