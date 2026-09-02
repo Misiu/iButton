@@ -20,9 +20,15 @@
     <button id="connect" class="primary wide">Połącz urządzenie</button>
 
     <section id="programmer" hidden>
-      <label for="serial">Numer seryjny</label>
-      <input id="serial" type="text" inputmode="text" autocomplete="off" spellcheck="false"
-             placeholder="00 00 00 00 00 00" maxlength="17">
+      <label>Numer seryjny</label>
+      <div id="serial-fields" class="serial-fields" role="group" aria-label="Numer seryjny iButton">
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Bajt 1">
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Bajt 2">
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Bajt 3">
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Bajt 4">
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Bajt 5">
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Bajt 6">
+      </div>
       <p class="hint">6 bajtów numeru seryjnego, np. 12 34 56 78 9A BC</p>
 
       <div class="actions">
