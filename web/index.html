@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>iButton Programmer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="card">
+    <header>
+      <div>
+        <p class="eyebrow">iButton Programmer</p>
+        <h1>Programator iButton</h1>
+      </div>
+      <span id="status" class="status disconnected">Rozłączony</span>
+    </header>
+
+    <button id="connect" class="primary wide">Połącz urządzenie</button>
+
+    <section id="programmer" hidden>
+      <label for="serial">Numer seryjny</label>
+      <input id="serial" type="text" inputmode="text" autocomplete="off" spellcheck="false"
+             placeholder="00 00 00 00 00 00" maxlength="17">
+      <p class="hint">6 bajtów numeru seryjnego, np. 12 34 56 78 9A BC</p>
+
+      <div class="actions">
+        <button id="read" class="secondary">Odczytaj</button>
+        <button id="write" class="primary">Zapisz</button>
+      </div>
+
+      <p id="message" class="message" aria-live="polite"></p>
+    </section>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
