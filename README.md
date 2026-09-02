@@ -1,6 +1,6 @@
 # iButton Programmer
 
-Web Serial based iButton programmer for ESP32-S3.
+Web Serial based iButton programmer for Seeed Studio XIAO ESP32-C3.
 
 ## Project status
 
@@ -17,15 +17,15 @@ The iButton ROM is 8 bytes: family byte `0x01`, six serial-number bytes and Dall
 
 ## Structure
 
-- `firmware/` — ESP32-S3 firmware
+- `firmware/` — XIAO ESP32-C3 firmware
 - `web/` — static Web Serial programmer UI, suitable for GitHub Pages
 - `.github/workflows/pages.yml` — GitHub Pages deployment
 
 ## Target hardware
 
-Seeed Studio XIAO ESP32-S3 is the initial target.
+Seeed Studio XIAO ESP32-C3.
 
-The 1-Wire data GPIO is configurable in `firmware/platformio.ini` via `IBUTTON_PIN`.
+The 1-Wire data GPIO is configurable in `firmware/platformio.ini` via `IBUTTON_PIN`. It is currently set to GPIO2; this is provisional until the final wiring is selected.
 
 ## Web app
 
@@ -36,7 +36,7 @@ The UI implements the two required operations:
 - Read
 - Write
 
-The web side preserves the legacy wire protocol so it can first be tested against the existing Arduino programmer before switching to the ESP32-S3 firmware.
+The web side preserves the legacy wire protocol so it can first be tested against the existing Arduino programmer before switching to the new ESP32-C3 firmware.
 
 ## Local web development
 
