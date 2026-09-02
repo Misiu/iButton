@@ -4,7 +4,8 @@ const RESPONSE_TIMEOUT_MS = 6500;
 const connectButton = document.querySelector('#connect');
 const readButton = document.querySelector('#read');
 const writeButton = document.querySelector('#write');
-const serialInput = document.querySelector('#serial');
+const serialFields = [...document.querySelectorAll('.serial-byte')];
+const serialFieldsContainer = document.querySelector('#serial-fields');
 const programmer = document.querySelector('#programmer');
 const status = document.querySelector('#status');
 const message = document.querySelector('#message');
@@ -37,6 +38,15 @@ function normalizeSerial(value) {
   return hex.match(/../g).join(' ');
 }
 
+function getSerial() {
+  return normalizeSerial(serialFields.map(field => field.value).join(''));
+}
+
+function setSerial(value) {
+  const bytes = normalizeSerial(value).split(' ');
+  serialFields.forEach((field, index) => { field.value = bytes[index]; });
+}
+
 function serialToRom(value) {
   const serial = normalizeSerial(value).split(' ').map(v => Number.parseInt(v, 16));
   const rom = [0x01, ...serial.reverse()];
@@ -66,16 +76,63 @@ function parseLegacyReadResponse(line) {
   if (tokens.length !== 8 || !tokens.every(x => /^[0-9a-fA-F]{2}$/.test(x))) {
     throw new Error(`Nieprawidłowa odpowiedź urządzenia: ${line}`);
   }
-
-  // Legacy WinForms reversed all 8 ROM bytes, then removed CRC and family byte.
   return tokens.slice(1, 7).reverse().join(' ').toUpperCase();
 }
 
+function distributeHex(text, startIndex = 0) {
+  const hex = text.toUpperCase().replace(/[^0-9A-F]/g, '');
+  if (!hex) return;
+  let position = 0;
+  for (let index = startIndex; index < serialFields.length && position < hex.length; index++) {
+    serialFields[index].value = hex.slice(position, position + 2);
+    position += 2;
+  }
+  const used = Math.ceil(Math.min(hex.length, (serialFields.length - startIndex) * 2) / 2);
+  const focusIndex = Math.min(startIndex + used, serialFields.length - 1);
+  serialFields[focusIndex].focus();
+  serialFields[focusIndex].select();
+}
+
+serialFields.forEach((field, index) => {
+  field.addEventListener('input', () => {
+    const hex = field.value.toUpperCase().replace(/[^0-9A-F]/g, '');
+    field.value = hex.slice(0, 2);
+    if (field.value.length === 2 && index < serialFields.length - 1) {
+      serialFields[index + 1].focus();
+      serialFields[index + 1].select();
+    }
+  });
+
+  field.addEventListener('keydown', event => {
+    if (event.key === 'Backspace' && field.value.length === 0 && index > 0) {
+      event.preventDefault();
+      const previous = serialFields[index - 1];
+      previous.focus();
+      previous.setSelectionRange(previous.value.length, previous.value.length);
+    }
+    if (event.key === 'ArrowLeft' && field.selectionStart === 0 && index > 0) {
+      event.preventDefault();
+      serialFields[index - 1].focus();
+    }
+    if (event.key === 'ArrowRight' && field.selectionStart === field.value.length && index < serialFields.length - 1) {
+      event.preventDefault();
+      serialFields[index + 1].focus();
+    }
+  });
+
+  field.addEventListener('focus', () => field.select());
+});
+
+serialFieldsContainer.addEventListener('paste', event => {
+  event.preventDefault();
+  const activeIndex = Math.max(0, serialFields.indexOf(document.activeElement));
+  distributeHex(event.clipboardData.getData('text'), activeIndex);
+});
+
 async function connect() {
   if (!('serial' in navigator)) {
-    throw new Error('Ta przeglądarka nie obsługuje Web Serial. Użyj Chrome/Chromium na Androidzie lub komputerze.');
+    throw new Error('Ta przeglądarka nie obsługuje Web Serial. Użyj zgodnej przeglądarki Chromium na komputerze.');
   }
-
   port = await navigator.serial.requestPort();
   await port.open({ baudRate: BAUD_RATE, dataBits: 8, stopBits: 1, parity: 'none', flowControl: 'none' });
   setConnected(true);
@@ -102,11 +159,7 @@ function setConnected(connected) {
 async function writeBytes(bytes) {
   if (!port?.writable) throw new Error('Programator nie jest połączony.');
   const writer = port.writable.getWriter();
-  try {
-    await writer.write(bytes);
-  } finally {
-    writer.releaseLock();
-  }
+  try { await writer.write(bytes); } finally { writer.releaseLock(); }
 }
 
 async function readLine(timeoutMs = RESPONSE_TIMEOUT_MS) {
@@ -114,7 +167,6 @@ async function readLine(timeoutMs = RESPONSE_TIMEOUT_MS) {
   const decoder = new TextDecoder();
   reader = port.readable.getReader();
   const deadline = Date.now() + timeoutMs;
-
   try {
     while (Date.now() < deadline) {
       const remaining = deadline - Date.now();
@@ -149,9 +201,8 @@ async function runBusy(fn) {
   writeButton.disabled = true;
   message.className = 'message';
   message.textContent = '';
-  try {
-    await fn();
-  } catch (error) {
+  try { await fn(); }
+  catch (error) {
     message.className = 'message error';
     message.textContent = error.message ?? String(error);
   } finally {
@@ -173,25 +224,20 @@ connectButton.addEventListener('click', async () => {
 readButton.addEventListener('click', () => runBusy(async () => {
   message.textContent = 'Przyłóż iButton do czytnika…';
   const response = await command(buildReadCommand());
-  serialInput.value = parseLegacyReadResponse(response);
+  setSerial(parseLegacyReadResponse(response));
   message.className = 'message success';
   message.textContent = 'Numer odczytany.';
 }));
 
 writeButton.addEventListener('click', () => runBusy(async () => {
-  const normalized = normalizeSerial(serialInput.value);
-  serialInput.value = normalized;
+  const normalized = getSerial();
+  setSerial(normalized);
   message.textContent = 'Przyłóż programowalny iButton do czytnika…';
   const response = await command(buildWriteCommand(normalized));
   if (response !== 'OK') throw new Error(response || 'Nie udało się zapisać numeru.');
   message.className = 'message success';
   message.textContent = 'Numer seryjny zapisany.';
 }));
-
-serialInput.addEventListener('blur', () => {
-  if (!serialInput.value.trim()) return;
-  try { serialInput.value = normalizeSerial(serialInput.value); } catch { }
-});
 
 navigator.serial?.addEventListener('disconnect', event => {
   if (event.target === port) {
