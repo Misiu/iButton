@@ -1,44 +1,51 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
+  <meta name="theme-color" content="#009ac7">
+  <meta name="color-scheme" content="light">
   <title>iButton Programmer</title>
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <canvas id="particles" aria-hidden="true"></canvas>
+
   <main class="card">
     <header>
       <div>
         <p class="eyebrow">iButton Programmer</p>
-        <h1>Programator iButton</h1>
+        <h1>iButton Programmer</h1>
       </div>
-      <span id="status" class="status disconnected">Rozłączony</span>
+      <span id="status" class="status disconnected">Disconnected</span>
     </header>
 
-    <button id="connect" class="primary wide">Połącz urządzenie</button>
+    <button id="connect" class="primary wide">Connect device</button>
 
     <section id="programmer" hidden>
-      <label>Numer seryjny</label>
-      <div id="serial-fields" class="serial-fields" role="group" aria-label="Numer seryjny iButton">
-        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Bajt 1">
-        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Bajt 2">
-        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Bajt 3">
-        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Bajt 4">
-        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Bajt 5">
-        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Bajt 6">
+      <label>Serial number</label>
+      <div id="serial-fields" class="serial-fields" role="group" aria-label="iButton serial number">
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 1">
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 2">
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 3">
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 4">
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 5">
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 6">
       </div>
-      <p class="hint">6 bajtów numeru seryjnego, np. 12 34 56 78 9A BC</p>
+      <p class="hint">6-byte serial number, e.g. 12 34 56 78 9A BC</p>
 
       <div class="actions">
-        <button id="read" class="secondary">Odczytaj</button>
-        <button id="write" class="primary">Zapisz</button>
+        <button id="read" class="secondary">Read</button>
+        <button id="write" class="primary">Write</button>
       </div>
 
       <p id="message" class="message" aria-live="polite"></p>
     </section>
   </main>
+
+  <script src="particles.js" defer></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

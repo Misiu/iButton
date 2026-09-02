@@ -34,7 +34,7 @@ function dallasCrc8(bytes) {
 
 function normalizeSerial(value) {
   const hex = value.toUpperCase().replace(/[^0-9A-F]/g, '');
-  if (hex.length !== 12) throw new Error('Numer seryjny musi zawierać dokładnie 6 bajtów.');
+  if (hex.length !== 12) throw new Error('The serial number must contain exactly 6 bytes.');
   return hex.match(/../g).join(' ');
 }
 
@@ -69,12 +69,12 @@ function buildWriteCommand(serial) {
 function parseLegacyReadResponse(line) {
   if (line.includes('ERROR')) {
     const error = line.length > 6 ? line.substring(6) : line;
-    throw new Error(error || 'Błąd odczytu iButton.');
+    throw new Error(error || 'iButton read failed.');
   }
 
   const tokens = line.trim().split(/\s+/);
   if (tokens.length !== 8 || !tokens.every(x => /^[0-9a-fA-F]{2}$/.test(x))) {
-    throw new Error(`Nieprawidłowa odpowiedź urządzenia: ${line}`);
+    throw new Error(`Invalid device response: ${line}`);
   }
   return tokens.slice(1, 7).reverse().join(' ').toUpperCase();
 }
@@ -131,7 +131,7 @@ serialFieldsContainer.addEventListener('paste', event => {
 
 async function connect() {
   if (!('serial' in navigator)) {
-    throw new Error('Ta przeglądarka nie obsługuje Web Serial. Użyj zgodnej przeglądarki Chromium na komputerze.');
+    throw new Error('This browser does not support Web Serial. Use a compatible Chromium-based desktop browser.');
   }
   port = await navigator.serial.requestPort();
   await port.open({ baudRate: BAUD_RATE, dataBits: 8, stopBits: 1, parity: 'none', flowControl: 'none' });
@@ -151,19 +151,19 @@ async function disconnect() {
 
 function setConnected(connected) {
   programmer.hidden = !connected;
-  status.textContent = connected ? 'Połączony' : 'Rozłączony';
+  status.textContent = connected ? 'Connected' : 'Disconnected';
   status.className = `status ${connected ? 'connected' : 'disconnected'}`;
-  connectButton.textContent = connected ? 'Rozłącz urządzenie' : 'Połącz urządzenie';
+  connectButton.textContent = connected ? 'Disconnect device' : 'Connect device';
 }
 
 async function writeBytes(bytes) {
-  if (!port?.writable) throw new Error('Programator nie jest połączony.');
+  if (!port?.writable) throw new Error('The programmer is not connected.');
   const writer = port.writable.getWriter();
   try { await writer.write(bytes); } finally { writer.releaseLock(); }
 }
 
 async function readLine(timeoutMs = RESPONSE_TIMEOUT_MS) {
-  if (!port?.readable) throw new Error('Programator nie jest połączony.');
+  if (!port?.readable) throw new Error('The programmer is not connected.');
   const decoder = new TextDecoder();
   reader = port.readable.getReader();
   const deadline = Date.now() + timeoutMs;
@@ -172,9 +172,9 @@ async function readLine(timeoutMs = RESPONSE_TIMEOUT_MS) {
       const remaining = deadline - Date.now();
       const result = await Promise.race([
         reader.read(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Przekroczono czas oczekiwania na iButton.')), remaining))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timed out waiting for an iButton.')), remaining))
       ]);
-      if (result.done) throw new Error('Połączenie z programatorem zostało przerwane.');
+      if (result.done) throw new Error('Connection to the programmer was interrupted.');
       receiveBuffer += decoder.decode(result.value, { stream: true });
       const newline = receiveBuffer.search(/[\r\n]/);
       if (newline >= 0) {
@@ -183,7 +183,7 @@ async function readLine(timeoutMs = RESPONSE_TIMEOUT_MS) {
         return line.trim();
       }
     }
-    throw new Error('Przekroczono czas oczekiwania na odpowiedź.');
+    throw new Error('Timed out waiting for a response.');
   } finally {
     reader.releaseLock();
     reader = undefined;
@@ -222,21 +222,21 @@ connectButton.addEventListener('click', async () => {
 });
 
 readButton.addEventListener('click', () => runBusy(async () => {
-  message.textContent = 'Przyłóż iButton do czytnika…';
+  message.textContent = 'Touch an iButton to the reader...';
   const response = await command(buildReadCommand());
   setSerial(parseLegacyReadResponse(response));
   message.className = 'message success';
-  message.textContent = 'Numer odczytany.';
+  message.textContent = 'Serial number read successfully.';
 }));
 
 writeButton.addEventListener('click', () => runBusy(async () => {
   const normalized = getSerial();
   setSerial(normalized);
-  message.textContent = 'Przyłóż programowalny iButton do czytnika…';
+  message.textContent = 'Touch a writable iButton to the reader...';
   const response = await command(buildWriteCommand(normalized));
-  if (response !== 'OK') throw new Error(response || 'Nie udało się zapisać numeru.');
+  if (response !== 'OK') throw new Error(response || 'Failed to write the serial number.');
   message.className = 'message success';
-  message.textContent = 'Numer seryjny zapisany.';
+  message.textContent = 'Serial number written successfully.';
 }));
 
 navigator.serial?.addEventListener('disconnect', event => {
@@ -244,6 +244,6 @@ navigator.serial?.addEventListener('disconnect', event => {
     port = undefined;
     setConnected(false);
     message.className = 'message error';
-    message.textContent = 'Programator został odłączony.';
+    message.textContent = 'The programmer was disconnected.';
   }
 });
