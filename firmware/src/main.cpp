@@ -2,15 +2,15 @@
 #include <OneWire.h>
 
 #ifndef IBUTTON_PIN
-#define IBUTTON_PIN 4
+#define IBUTTON_PIN 6
 #endif
 
 #ifndef LED_PIN
-#define LED_PIN 6
+#define LED_PIN 4
 #endif
 
 #ifndef LED_ACTIVE_HIGH
-#define LED_ACTIVE_HIGH 1
+#define LED_ACTIVE_HIGH 0
 #endif
 
 static constexpr uint32_t SERIAL_BAUD = 9600;
