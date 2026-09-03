@@ -38,14 +38,24 @@ The XIAO firmware keeps the same D2/D4 board labels while using their XIAO ESP32
 
 | Function | XIAO pin | ESP32-C3 GPIO | Connection |
 | --- | --- | --- | --- |
-| iButton 1-Wire data | D4 | GPIO6 | Probe 1-Wire data |
+| iButton 1-Wire data | D4 | GPIO6 | Probe/iButton center DATA contact |
 | Probe LED control | D2 | GPIO4 | LED cathode/control side, active-low |
 | LED supply | 3V3 | 3.3 V | Existing probe LED resistor/anode supply |
-| Ground | GND | GND | Probe/iButton ground |
+| Ground | GND | GND | Probe/iButton outer contact |
+
+The 1-Wire DATA line requires an external pull-up to 3.3 V. For the RW1990 programmer, use **1.8 kOhm between 3V3 and D4/GPIO6**. The iButton itself therefore still needs only two physical contacts: center DATA to D4/GPIO6 and outer shell to GND.
+
+```text
+3V3 ---- 1.8 kOhm ----+---- D4 / GPIO6
+                      |
+                      +---- iButton center DATA
+
+GND ----------------------- iButton outer shell
+```
 
 The LED branch is intentionally powered from XIAO `3V3`, not from 5 V. Keep the probe's existing series/current-limiting resistor in circuit. With the measured active-low arrangement, GPIO4 is HIGH while the LED is off and LOW while the LED is on, so the GPIO sinks the LED current. Using 3.3 V instead of the legacy 5 V reduces LED current and may reduce brightness, which is acceptable for the status indicator.
 
-Do **not** connect the legacy 5 V LED supply to an ESP32-C3 GPIO. All GPIO-side signals in the new programmer are 3.3 V.
+Do **not** connect the legacy 5 V LED supply or a 5 V 1-Wire pull-up to an ESP32-C3 GPIO. All GPIO-side signals in the new programmer are 3.3 V.
 
 Connect the probe by **function**, not by assumed wire color. Probe cable colors differ between variants. The metal outer contact is the iButton ground contact and the center contact carries the 1-Wire signal.
 
@@ -63,7 +73,9 @@ For both **Read** and **Write**, the firmware turns the probe LED on and waits u
 
 For **Read**, the LED is turned off immediately after a valid ROM is read. For **Write**, the LED stays on while the detected writable iButton is programmed and verified, then turns off before the result is returned.
 
-The RW1990/TM1990 write sequence in the new ESP32-C3 firmware is provisional until verified against the original Arduino firmware or tested with the actual writable tokens. The web application's legacy serial protocol does not depend on this and can already be tested with the existing Arduino Nano programmer.
+RW1990 programming follows the reference Arduino duplicator sequence: enter write mode with `0xD1`, write the complete 8-byte ROM after `0xD5` LSB-first using the RW1990 programming pulses and approximately 10 ms programming time per bit, then use `0xD1` again to leave write mode. The firmware reads the ROM back afterwards and only returns `OK` when all 8 bytes match the requested ROM.
+
+Different writable iButton clones can implement different programming protocols. The current implementation targets the RW1990/TM1990-style sequence described above; it should be tested with the actual tokens before relying on it for other clone families.
 
 ## Web app
 
