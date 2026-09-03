@@ -38,39 +38,53 @@ Seeed Studio XIAO ESP32-C3.
 
 ### Probe wiring
 
-The legacy programmer was measured with the probe connected. Arduino Nano D2 sits at approximately 5 V while the LED is off, drops to approximately 0 V while the LED is on, and returns to approximately 5 V afterwards. Together with the resistor in the LED branch, this identifies D2 as an active-low LED sink. The other signal pin, D4, is therefore used for 1-Wire.
+The legacy Arduino Nano programmer was physically traced and measured after exposing both series/pull-up resistors. Its wiring is:
 
-The XIAO firmware keeps the same D2/D4 board labels while using their XIAO ESP32-C3 GPIO mappings:
+- Nano D2 is the 1-Wire DATA line. It is pulled up to 5 V through approximately **2.2 kOhm** and continues to probe pin 2.
+- Nano D4 drives probe pin 1 through approximately **3.3 kOhm**. This is the probe LED/status branch.
+- GND goes directly to probe pins 3 and 4.
+
+The measured D2 voltage of approximately 5 V while idle and transitions toward 0 V during activity is consistent with a pulled-up 1-Wire bus.
+
+For XIAO ESP32-C3 the same board labels are retained, but the pull-up is moved to 3.3 V because ESP32-C3 GPIO must not be exposed to the legacy 5 V bus:
 
 | Function | XIAO pin | ESP32-C3 GPIO | Connection |
 | --- | --- | --- | --- |
-| iButton 1-Wire data | D4 | GPIO6 | Probe/iButton center DATA contact |
-| Probe LED control | D2 | GPIO4 | LED cathode/control side, active-low |
-| LED supply | 3V3 | 3.3 V | Existing probe LED resistor/anode supply |
-| Ground | GND | GND | Probe/iButton outer contact |
-
-The 1-Wire DATA line requires an external pull-up to 3.3 V. For the RW1990 programmer, use **2.2 kOhm between 3V3 and D4/GPIO6**. The iButton itself therefore still needs only two physical contacts: center DATA to D4/GPIO6 and outer shell to GND.
+| iButton 1-Wire DATA | D2 | GPIO4 | Probe pin 2 / iButton center DATA contact |
+| DATA pull-up | 3V3 | 3.3 V | 2.2 kOhm to D2/GPIO4 |
+| Probe LED/status | D4 | GPIO6 | Probe pin 1 through the existing ~3.3 kOhm resistor |
+| Ground | GND | GND | Probe pins 3 and 4 / iButton outer contact |
 
 ```text
-3V3 ---- 2.2 kOhm ----+---- D4 / GPIO6
+                 2.2 kOhm
+XIAO 3V3 --------/\/\/\--------+
+                               |
+XIAO D2 / GPIO4 ---------------+---- probe pin 2 / iButton DATA
+
+XIAO D4 / GPIO6 --- 3.3 kOhm ------- probe pin 1 / LED
+
+XIAO GND ---------------------------- probe pin 3
+         +--------------------------- probe pin 4
+```
+
+For a minimal test without the probe, only DATA and GND touch the RW1990:
+
+```text
+3V3 ---- 2.2 kOhm ----+---- D2 / GPIO4
                       |
                       +---- iButton center DATA
 
 GND ----------------------- iButton outer shell
 ```
 
-The LED branch is intentionally powered from XIAO `3V3`, not from 5 V. Keep the probe's existing series/current-limiting resistor in circuit. With the measured active-low arrangement, GPIO4 is HIGH while the LED is off and LOW while the LED is on, so the GPIO sinks the LED current. Using 3.3 V instead of the legacy 5 V reduces LED current and may reduce brightness, which is acceptable for the status indicator.
-
-Do **not** connect the legacy 5 V LED supply or a 5 V 1-Wire pull-up to an ESP32-C3 GPIO. All GPIO-side signals in the new programmer are 3.3 V.
-
-Connect the probe by **function**, not by assumed wire color. Probe cable colors differ between variants. The metal outer contact is the iButton ground contact and the center contact carries the 1-Wire signal.
+Do **not** reproduce the legacy 5 V DATA pull-up on the XIAO. Use 3.3 V for the 1-Wire pull-up.
 
 Firmware pin configuration in `firmware/platformio.ini`:
 
 ```ini
--D IBUTTON_PIN=6
--D LED_PIN=4
--D LED_ACTIVE_HIGH=0
+-D IBUTTON_PIN=4
+-D LED_PIN=6
+-D LED_ACTIVE_HIGH=1
 ```
 
 ### Operation
