@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="description" content="Read an Arduino Nano ATmega328P flash image through its bootloader using Web Serial.">
+  <meta name="theme-color" content="#009ac7">
+  <meta name="color-scheme" content="light">
+  <title>Arduino Nano Firmware Dump</title>
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .dump-copy{margin:0 0 20px;color:var(--secondary-text);font-size:14px;line-height:1.5}
+    .dump-actions{display:grid;gap:12px}.dump-actions button,.dump-actions a{width:100%}
+    .dump-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+    .dump-status{margin:18px 0 0;font-size:14px;min-height:22px}.dump-status.error{color:var(--error)}.dump-status.success{color:var(--success)}
+    .progress{height:8px;margin-top:14px;border-radius:999px;background:#e8e8e8;overflow:hidden}.progress>span{display:block;width:0;height:100%;background:var(--primary-button);transition:width .1s linear}
+    .dump-meta{margin-top:16px;padding:12px;border:1px solid var(--divider);border-radius:12px;background:#fafafa;font-size:12px;line-height:1.55;color:var(--secondary-text)}
+    .dump-meta strong{color:var(--text)}
+    .dump-log{height:220px;overflow:auto;margin:12px 0 0;padding:12px;border:1px solid var(--divider);border-radius:10px;background:#f7f7f7;color:#333;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+    .button-link{display:block;min-height:50px;border-radius:14px;padding:14px 20px;background:var(--primary-button);color:#fff;box-shadow:0 2px 6px rgba(0,127,163,.25);font-size:15px;font-weight:500;line-height:22px;text-align:center;text-decoration:none}
+    .button-link:hover{background:var(--primary-dark)}
+    @media(max-width:450px){.dump-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <canvas id="particles" aria-hidden="true"></canvas>
+  <main class="card">
+    <header>
+      <div>
+        <p class="eyebrow">iButton Programmer</p>
+        <h1>Arduino Nano firmware dump</h1>
+      </div>
+      <span id="status" class="status disconnected">Disconnected</span>
+    </header>
+
+    <p class="dump-copy">Read the flash memory of a legacy Arduino Nano/ATmega328P through its STK500v1-compatible bootloader. This page is read-only: it does not erase or write flash.</p>
+
+    <div class="dump-actions">
+      <button id="connect" class="primary">Connect & detect Nano</button>
+      <button id="dump" class="primary" disabled>Read flash</button>
+    </div>
+
+    <div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
+    <p id="message" class="dump-status" aria-live="polite"></p>
+
+    <div id="meta" class="dump-meta" hidden>
+      <div><strong>Bootloader baud:</strong> <span id="baud">-</span></div>
+      <div><strong>Signature:</strong> <span id="signature">-</span></div>
+      <div><strong>Flash size:</strong> <span id="flash-size">32768 bytes</span></div>
+      <div><strong>Dumped:</strong> <span id="dumped">0 bytes</span></div>
+    </div>
+
+    <div class="dump-grid">
+      <button id="download-bin" class="secondary" disabled>Download BIN</button>
+      <button id="download-hex" class="secondary" disabled>Download Intel HEX</button>
+    </div>
+
+    <details class="protocol-details">
+      <summary>STK500 log</summary>
+      <pre id="log" class="dump-log"></pre>
+    </details>
+
+    <div style="margin-top:18px"><a class="button-link" href="./">Open programmer</a></div>
+  </main>
+
+  <script src="particles.js" defer></script>
+  <script type="module" src="dump.js"></script>
+</body>
+</html>
