@@ -1,5 +1,5 @@
 const BAUD_RATE = 9600;
-const RESPONSE_TIMEOUT_MS = 6500;
+const RESPONSE_TIMEOUT_MS = 15000;
 
 const connectButton = document.querySelector('#connect');
 const readButton = document.querySelector('#read');
@@ -81,12 +81,13 @@ function isRomResponse(line) {
 
 function isProtocolResponse(line) {
   const value = line.trim();
-  return value === 'OK' || value === 'ERROR' || value.startsWith('ERROR ') || isRomResponse(value);
+  return value === 'OK' || value === 'ERROR' || value.startsWith('ERROR ') || value.startsWith('ERROR:') || isRomResponse(value);
 }
 
 function parseDeviceError(line) {
   const value = line.trim();
   if (value === 'ERROR') return 'iButton operation failed.';
+  if (value.startsWith('ERROR:')) return value.slice(6).trim() || 'iButton operation failed.';
   if (value.startsWith('ERROR ')) return value.slice(6).trim() || 'iButton operation failed.';
   return value;
 }
