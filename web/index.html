@@ -43,6 +43,15 @@
       </div>
 
       <p id="message" class="message" aria-live="polite"></p>
+
+      <details class="protocol-details">
+        <summary>Protocol log</summary>
+        <div class="protocol-toolbar">
+          <span>Raw USB serial traffic</span>
+          <button id="clear-log" type="button" class="log-button">Clear</button>
+        </div>
+        <pre id="protocol-log" class="protocol-log" aria-label="Protocol log"></pre>
+      </details>
     </section>
   </main>
 
