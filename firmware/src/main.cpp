@@ -16,12 +16,42 @@
 static constexpr uint32_t SERIAL_BAUD = 9600;
 static constexpr size_t COMMAND_SIZE = 11;
 static constexpr uint32_t TOUCH_TIMEOUT_MS = 5000;
+static constexpr uint32_t RW1990_PROGRAM_DELAY_MS = 10;
 
 OneWire oneWire(IBUTTON_PIN);
 
 void setProbeLed(bool on) {
   const bool level = LED_ACTIVE_HIGH ? on : !on;
   digitalWrite(LED_PIN, level ? HIGH : LOW);
+}
+
+void releaseOneWireLine() {
+  pinMode(IBUTTON_PIN, INPUT);
+}
+
+void pullOneWireLow(uint32_t microseconds) {
+  pinMode(IBUTTON_PIN, OUTPUT);
+  digitalWrite(IBUTTON_PIN, LOW);
+  if (microseconds > 0) delayMicroseconds(microseconds);
+  releaseOneWireLine();
+}
+
+void programRw1990Bit(bool one) {
+  // RW1990 programming timing used by the reference Arduino duplicator:
+  // logical 1 => ~60 us LOW pulse, then release for ~10 ms
+  // logical 0 => release immediately after asserting LOW, then wait ~10 ms
+  pinMode(IBUTTON_PIN, OUTPUT);
+  digitalWrite(IBUTTON_PIN, LOW);
+  if (one) delayMicroseconds(60);
+  releaseOneWireLine();
+  delay(RW1990_PROGRAM_DELAY_MS);
+}
+
+void programRw1990Byte(uint8_t value) {
+  for (uint8_t bit = 0; bit < 8; ++bit) {
+    programRw1990Bit((value & 0x01) != 0);
+    value >>= 1;
+  }
 }
 
 uint8_t additiveChecksum(const uint8_t *data, size_t length) {
@@ -56,29 +86,26 @@ void printRom(const uint8_t rom[8]) {
 }
 
 bool writeRw1990(const uint8_t rom[8]) {
-  // Provisional RW1990/TM1990-compatible sequence. Verify against the legacy
-  // programmer firmware / actual tokens before treating this as production-ready.
+  // Enable write mode: reset, 0xD1, then program logical 0.
   if (!oneWire.reset()) return false;
   oneWire.write(0xD1);
-  oneWire.write_bit(0);
-  delay(10);
+  pullOneWireLow(60);
+  delay(RW1990_PROGRAM_DELAY_MS);
 
+  // Write the complete 8-byte ROM, LSB first, using the RW1990 programming timing.
   if (!oneWire.reset()) return false;
   oneWire.write(0xD5);
   for (size_t byteIndex = 0; byteIndex < 8; ++byteIndex) {
-    uint8_t value = rom[byteIndex];
-    for (uint8_t bit = 0; bit < 8; ++bit) {
-      oneWire.write_bit(value & 0x01);
-      value >>= 1;
-      delay(10);
-    }
+    programRw1990Byte(rom[byteIndex]);
   }
 
+  // Disable write mode: reset, 0xD1, then program logical 1.
   if (!oneWire.reset()) return false;
   oneWire.write(0xD1);
-  oneWire.write_bit(1);
-  delay(10);
+  pullOneWireLow(10);
+  delay(RW1990_PROGRAM_DELAY_MS);
 
+  // Verify by reading the programmed ROM back.
   uint8_t verify[8];
   return waitForRom(verify, 1000) && memcmp(verify, rom, 8) == 0;
 }
@@ -146,6 +173,7 @@ void processCommand(const uint8_t command[COMMAND_SIZE]) {
 void setup() {
   pinMode(LED_PIN, OUTPUT);
   setProbeLed(false);
+  releaseOneWireLine();
   Serial.begin(SERIAL_BAUD);
 }
 
