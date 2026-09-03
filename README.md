@@ -4,6 +4,8 @@ Web-based iButton reader/programmer using Web Serial, with firmware targeting th
 
 **Web programmer:** https://ibutton.jagusz.xyz/
 
+**Firmware installer:** https://ibutton.jagusz.xyz/install.html
+
 ## Compatibility
 
 The web application preserves the serial protocol used by the legacy Arduino Nano programmer, so the same page can be used with the existing Mini-USB device before migrating the hardware to XIAO ESP32-C3.
@@ -19,11 +21,15 @@ The final command byte is an 8-bit additive checksum of all previous command byt
 
 The iButton ROM is 8 bytes: family byte `0x01`, six serial-number bytes and Dallas/Maxim CRC-8 as byte 8. The serial-number field shown in the UI contains only the six serial-number bytes in human-readable order.
 
+For writes, the browser takes the six displayed serial bytes, reverses them into Dallas ROM byte order, prepends family byte `0x01`, calculates Dallas/Maxim CRC-8 over the first seven ROM bytes and appends that CRC as byte 8. The complete ROM is then wrapped in the legacy 11-byte write command. The XIAO firmware validates both the command checksum and ROM CRC before programming the RW1990.
+
 ## Structure
 
 - `firmware/` — XIAO ESP32-C3 firmware
-- `web/` — static Web Serial programmer UI deployed to GitHub Pages
-- `.github/workflows/pages.yml` — GitHub Pages deployment
+- `web/index.html` — normal Read/Write interface
+- `web/install.html` — browser firmware installer for XIAO ESP32-C3
+- `web/` — static site deployed to GitHub Pages
+- `.github/workflows/pages.yml` — builds firmware and deploys the web UI plus installer
 - `.github/workflows/firmware.yml` — firmware CI build
 
 ## Target hardware
@@ -43,10 +49,10 @@ The XIAO firmware keeps the same D2/D4 board labels while using their XIAO ESP32
 | LED supply | 3V3 | 3.3 V | Existing probe LED resistor/anode supply |
 | Ground | GND | GND | Probe/iButton outer contact |
 
-The 1-Wire DATA line requires an external pull-up to 3.3 V. For the RW1990 programmer, use **1.8 kOhm between 3V3 and D4/GPIO6**. The iButton itself therefore still needs only two physical contacts: center DATA to D4/GPIO6 and outer shell to GND.
+The 1-Wire DATA line requires an external pull-up to 3.3 V. For the RW1990 programmer, use **2.2 kOhm between 3V3 and D4/GPIO6**. The iButton itself therefore still needs only two physical contacts: center DATA to D4/GPIO6 and outer shell to GND.
 
 ```text
-3V3 ---- 1.8 kOhm ----+---- D4 / GPIO6
+3V3 ---- 2.2 kOhm ----+---- D4 / GPIO6
                       |
                       +---- iButton center DATA
 
@@ -75,7 +81,7 @@ For **Read**, the LED is turned off immediately after a valid ROM is read. For *
 
 RW1990 programming follows the reference Arduino duplicator sequence: enter write mode with `0xD1`, write the complete 8-byte ROM after `0xD5` LSB-first using the RW1990 programming pulses and approximately 10 ms programming time per bit, then use `0xD1` again to leave write mode. The firmware reads the ROM back afterwards and only returns `OK` when all 8 bytes match the requested ROM.
 
-Different writable iButton clones can implement different programming protocols. The current implementation targets the RW1990/TM1990-style sequence described above; it should be tested with the actual tokens before relying on it for other clone families.
+The current implementation targets RW1990/RW1990.2-style writable tokens. Other writable iButton clone families can use different programming protocols.
 
 ## Web app
 
@@ -86,6 +92,12 @@ Open https://ibutton.jagusz.xyz/ in a Web Serial capable browser, connect the pr
 
 Web Serial requires HTTPS or localhost for development.
 
+## Firmware installation
+
+Open https://ibutton.jagusz.xyz/install.html in a Chromium-based browser and connect the XIAO ESP32-C3 by USB-C. The installer uses ESP Web Tools and flashes the firmware binaries produced by the same PlatformIO build that is deployed with the site.
+
+If a blank or corrupted XIAO does not enter the serial bootloader automatically, put it into the ESP32-C3 download mode and run the installer again.
+
 ## Firmware
 
 The current firmware prototype uses PlatformIO with the Arduino framework:
@@ -95,4 +107,4 @@ cd firmware
 pio run
 ```
 
-Arduino was chosen initially to keep the prototype small and to reuse the mature OneWire library. For production firmware, especially when serial firmware updates, OTA partitions, rollback and stricter device/version handling are added, moving the firmware to ESP-IDF is a reasonable next step without changing the browser protocol.
+Arduino was chosen initially to keep the prototype small and to reuse the mature OneWire library. For production firmware, especially when application-level firmware updates, rollback and stricter device/version handling are added, moving the firmware to ESP-IDF remains possible without changing the browser protocol.
