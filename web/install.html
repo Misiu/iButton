@@ -11,6 +11,72 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    .install-copy {
+      margin: 0 0 22px;
+      color: var(--secondary-text);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .install-actions {
+      display: grid;
+      gap: 12px;
+    }
+
+    .install-actions esp-web-install-button,
+    .install-actions .button-link {
+      display: block;
+      width: 100%;
+    }
+
+    .install-actions button,
+    .install-actions .button-link {
+      width: 100%;
+      min-height: 50px;
+      border: 0;
+      border-radius: 14px;
+      padding: 14px 20px;
+      background: var(--primary-button);
+      color: #fff;
+      box-shadow: 0 2px 6px rgba(0,127,163,.25);
+      font: inherit;
+      font-size: 15px;
+      font-weight: 500;
+      line-height: 22px;
+      text-align: center;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background-color .15s ease, box-shadow .15s ease, transform .05s ease;
+    }
+
+    .install-actions button:hover,
+    .install-actions .button-link:hover {
+      background: var(--primary-dark);
+    }
+
+    .install-actions button:active,
+    .install-actions .button-link:active {
+      transform: translateY(1px);
+    }
+
+    .install-note {
+      margin: 18px 0 0;
+      color: var(--secondary-text);
+      font-size: 12px;
+      line-height: 1.5;
+      text-align: center;
+    }
+
+    .unsupported {
+      display: block;
+      margin-top: 10px;
+      color: var(--error);
+      font-size: 13px;
+      line-height: 1.45;
+      text-align: center;
+    }
+  </style>
 </head>
 <body>
   <canvas id="particles" aria-hidden="true"></canvas>
@@ -23,17 +89,18 @@
       </div>
     </header>
 
-    <p class="hint">Connect a Seeed Studio XIAO ESP32-C3 with a USB-C data cable, then install the latest firmware.</p>
+    <p class="install-copy">Connect a Seeed Studio XIAO ESP32-C3 with a USB-C data cable, then install the latest firmware.</p>
 
-    <div class="actions">
+    <div class="install-actions">
       <esp-web-install-button manifest="firmware/manifest.json">
-        <button slot="activate" class="primary wide">Install firmware</button>
-        <span slot="unsupported">Use a Chromium-based browser with Web Serial support.</span>
+        <button slot="activate" type="button">Install firmware</button>
+        <span slot="unsupported" class="unsupported">Use a Chromium-based browser with Web Serial support.</span>
       </esp-web-install-button>
+
+      <a href="./" class="button-link">Open programmer</a>
     </div>
 
-    <p class="hint">After installation, return to the programmer to read or write an iButton.</p>
-    <a href="./" class="primary wide" style="display:block;text-align:center;text-decoration:none;box-sizing:border-box;">Open programmer</a>
+    <p class="install-note">After installation, return to the programmer to read or write an iButton.</p>
   </main>
 
   <script src="particles.js" defer></script>
