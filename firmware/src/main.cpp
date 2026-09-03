@@ -15,7 +15,7 @@
 
 static constexpr uint32_t SERIAL_BAUD = 9600;
 static constexpr size_t COMMAND_SIZE = 11;
-static constexpr uint32_t TOUCH_TIMEOUT_MS = 5000;
+static constexpr uint32_t TOUCH_TIMEOUT_MS = 10000;
 static constexpr uint32_t RW1990_PROGRAM_DELAY_MS = 10;
 
 OneWire oneWire(IBUTTON_PIN);
@@ -37,9 +37,6 @@ void pullOneWireLow(uint32_t microseconds) {
 }
 
 void programRw1990Bit(bool one) {
-  // RW1990 programming timing used by the reference Arduino duplicator:
-  // logical 1 => ~60 us LOW pulse, then release for ~10 ms
-  // logical 0 => release immediately after asserting LOW, then wait ~10 ms
   pinMode(IBUTTON_PIN, OUTPUT);
   digitalWrite(IBUTTON_PIN, LOW);
   if (one) delayMicroseconds(60);
@@ -86,26 +83,22 @@ void printRom(const uint8_t rom[8]) {
 }
 
 bool writeRw1990(const uint8_t rom[8]) {
-  // Enable write mode: reset, 0xD1, then program logical 0.
   if (!oneWire.reset()) return false;
   oneWire.write(0xD1);
   pullOneWireLow(60);
   delay(RW1990_PROGRAM_DELAY_MS);
 
-  // Write the complete 8-byte ROM, LSB first, using the RW1990 programming timing.
   if (!oneWire.reset()) return false;
   oneWire.write(0xD5);
   for (size_t byteIndex = 0; byteIndex < 8; ++byteIndex) {
     programRw1990Byte(rom[byteIndex]);
   }
 
-  // Disable write mode: reset, 0xD1, then program logical 1.
   if (!oneWire.reset()) return false;
   oneWire.write(0xD1);
   pullOneWireLow(10);
   delay(RW1990_PROGRAM_DELAY_MS);
 
-  // Verify by reading the programmed ROM back.
   uint8_t verify[8];
   return waitForRom(verify, 1000) && memcmp(verify, rom, 8) == 0;
 }
