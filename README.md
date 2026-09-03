@@ -2,9 +2,9 @@
 
 Web-based iButton reader/programmer using Web Serial, with firmware targeting the Seeed Studio XIAO ESP32-C3.
 
-**Web programmer:** https://ibutton.jagusz.xyz/
+**Web programmer:** https://misiu.github.io/iButton/
 
-**Firmware installer:** https://ibutton.jagusz.xyz/install.html
+**Firmware installer:** https://misiu.github.io/iButton/install.html
 
 ## Compatibility
 
@@ -85,7 +85,7 @@ The current implementation targets RW1990/RW1990.2-style writable tokens. Other 
 
 ## Web app
 
-Open https://ibutton.jagusz.xyz/ in a Web Serial capable browser, connect the programmer and use:
+Open https://misiu.github.io/iButton/ in a Web Serial capable browser, connect the programmer and use:
 
 - **Read** — reads the iButton ROM and displays its six-byte serial number
 - **Write** — builds the complete family/serial/CRC ROM and sends it to the programmer
@@ -94,7 +94,7 @@ Web Serial requires HTTPS or localhost for development.
 
 ## Firmware installation
 
-Open https://ibutton.jagusz.xyz/install.html in a Chromium-based browser and connect the XIAO ESP32-C3 by USB-C. The installer uses ESP Web Tools and flashes the firmware binaries produced by the same PlatformIO build that is deployed with the site.
+Open https://misiu.github.io/iButton/install.html in a Chromium-based browser and connect the XIAO ESP32-C3 by USB-C. The installer uses ESP Web Tools and flashes the firmware binaries produced by the same PlatformIO build that is deployed with the site.
 
 If a blank or corrupted XIAO does not enter the serial bootloader automatically, put it into the ESP32-C3 download mode and run the installer again.
 
