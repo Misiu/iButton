@@ -1,6 +1,6 @@
 const FLASH_SIZE = 32768;
 const PAGE_SIZE = 128;
-const BAUD_RATES = [115200, 57600];
+const BAUD_RATES = [115200, 57600, 38400];
 const STK_OK = 0x10;
 const STK_INSYNC = 0x14;
 const CRC_EOP = 0x20;
@@ -29,6 +29,7 @@ let selectedBaud;
 let flashDump;
 
 function hexByte(v) { return v.toString(16).padStart(2, '0').toUpperCase(); }
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function log(text) {
   logElement.textContent += `${new Date().toLocaleTimeString([], { hour12: false })} ${text}\n`;
   logElement.scrollTop = logElement.scrollHeight;
@@ -43,46 +44,44 @@ function setConnected(value) {
   dumpButton.disabled = !value;
 }
 
+async function closeReader() {
+  if (!reader) return;
+  await reader.cancel().catch(() => {});
+  reader.releaseLock();
+  reader = undefined;
+}
+
 async function closePort() {
-  if (reader) {
-    await reader.cancel().catch(() => {});
-    reader.releaseLock();
-    reader = undefined;
-  }
-  if (port) await port.close().catch(() => {});
+  await closeReader();
+  if (port?.readable || port?.writable) await port.close().catch(() => {});
   port = undefined;
   rx = [];
 }
 
-async function openAt(baud) {
-  await closePort();
-  port = await navigator.serial.requestPort();
-  await port.open({ baudRate: baud, dataBits: 8, stopBits: 1, parity: 'none', flowControl: 'none' });
+async function openPort(baud) {
+  await port.open({ baudRate: baud, dataBits: 8, stopBits: 1, parity: 'none', flowControl: 'none', bufferSize: 1024 });
   rx = [];
   log(`Opened at ${baud} baud`);
 }
 
-async function reopenAt(baud) {
-  if (reader) {
-    await reader.cancel().catch(() => {});
-    reader.releaseLock();
-    reader = undefined;
-  }
-  if (port) await port.close().catch(() => {});
-  await new Promise(resolve => setTimeout(resolve, 150));
-  await port.open({ baudRate: baud, dataBits: 8, stopBits: 1, parity: 'none', flowControl: 'none' });
-  rx = [];
-  log(`Reopened at ${baud} baud`);
+async function setSignalsTwice(signals) {
+  // Windows usbser.sys and some USB-UART bridges may apply the previous
+  // control-line state on the first call. Sending it twice is harmless and
+  // improves reliability with CH340/FTDI/CDC adapters.
+  await port.setSignals(signals).catch(() => {});
+  await port.setSignals(signals).catch(() => {});
 }
 
 async function resetNano() {
-  // Arduino Nano USB-serial adapters normally reset the ATmega through DTR.
-  await port.setSignals({ dataTerminalReady: false, requestToSend: false }).catch(() => {});
-  await new Promise(resolve => setTimeout(resolve, 100));
-  await port.setSignals({ dataTerminalReady: true, requestToSend: false }).catch(() => {});
-  await new Promise(resolve => setTimeout(resolve, 350));
-  await port.setSignals({ dataTerminalReady: false, requestToSend: false }).catch(() => {});
-  await new Promise(resolve => setTimeout(resolve, 100));
+  // Arduino Nano auto-reset is driven through a capacitor from DTR to RESET.
+  // Generate both edges explicitly and then talk to the bootloader immediately.
+  log('Toggling DTR for Nano auto-reset');
+  await setSignalsTwice({ dataTerminalReady: false, requestToSend: false });
+  await sleep(80);
+  await setSignalsTwice({ dataTerminalReady: true, requestToSend: false });
+  await sleep(80);
+  await setSignalsTwice({ dataTerminalReady: false, requestToSend: false });
+  await sleep(180);
   rx = [];
 }
 
@@ -111,7 +110,7 @@ async function readBytes(count, timeoutMs = 1200) {
   return out;
 }
 
-async function drainInput(ms = 80) {
+async function drainInput(ms = 60) {
   if (!port?.readable) return;
   if (!reader) reader = port.readable.getReader();
   const end = Date.now() + ms;
@@ -119,7 +118,7 @@ async function drainInput(ms = 80) {
     try {
       const result = await Promise.race([
         reader.read(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('done')), 20))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('done')), 15))
       ]);
       if (result.done) break;
       if (result.value?.length) log(`RX-DRAIN ${[...result.value].map(hexByte).join(' ')}`);
@@ -138,66 +137,102 @@ async function command(bytes, payloadLength = 0, timeoutMs = 1200) {
   return payload;
 }
 
-async function sync() {
+async function sync(attempts = 10) {
   await drainInput();
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < attempts; i++) {
     try {
-      const reply = await command([STK_GET_SYNC], 0, 700);
-      return reply;
+      await command([STK_GET_SYNC], 0, 500);
+      log(`STK500 sync succeeded on attempt ${i + 1}`);
+      return;
     } catch (error) {
       log(`Sync attempt ${i + 1} failed: ${error.message}`);
-      await new Promise(resolve => setTimeout(resolve, 100));
       rx = [];
+      await sleep(60);
     }
   }
   throw new Error('Nano bootloader did not answer STK500v1 sync.');
+}
+
+async function tryBaud(baud, manualReset = false) {
+  if (port.readable || port.writable) {
+    await closeReader();
+    await port.close().catch(() => {});
+    await sleep(120);
+  }
+  await openPort(baud);
+  if (manualReset) {
+    setMessage(`Press RESET on the Nano now. Waiting for bootloader at ${baud} baud...`);
+    log(`Manual reset window at ${baud} baud`);
+    // Keep sending GET_SYNC for several seconds so a manual reset can land in the window.
+    await sync(16);
+  } else {
+    await resetNano();
+    await sync(10);
+  }
+  const signature = await command([STK_READ_SIGN], 3);
+  return signature;
 }
 
 async function detect() {
   if (!('serial' in navigator)) throw new Error('Web Serial is not available. Use Chrome or Edge.');
   setMessage('Select the Arduino Nano serial port...');
   port = await navigator.serial.requestPort();
+  const info = port.getInfo?.() ?? {};
+  log(`Selected USB VID=${info.usbVendorId ?? 'n/a'} PID=${info.usbProductId ?? 'n/a'}`);
 
   let lastError;
   for (const baud of BAUD_RATES) {
     try {
-      if (port.readable || port.writable) await port.close().catch(() => {});
-      await port.open({ baudRate: baud, dataBits: 8, stopBits: 1, parity: 'none', flowControl: 'none' });
-      log(`Trying Nano bootloader at ${baud} baud`);
-      await resetNano();
-      await sync();
-      const signature = await command([STK_READ_SIGN], 3);
-      const signatureText = signature.map(hexByte).join(' ');
-      log(`Signature ${signatureText}`);
-      if (signatureText !== '1E 95 0F') log('WARNING: signature is not ATmega328P (1E 95 0F)');
-      selectedBaud = baud;
-      baudElement.textContent = String(baud);
-      signatureElement.textContent = signatureText;
-      meta.hidden = false;
-      setConnected(true);
-      setMessage(`Bootloader detected at ${baud} baud.`, 'success');
-      return;
+      log(`Trying automatic Nano reset at ${baud} baud`);
+      const signature = await tryBaud(baud, false);
+      return finishDetection(baud, signature);
     } catch (error) {
       lastError = error;
-      log(`${baud} baud failed: ${error.message}`);
-      if (reader) {
-        await reader.cancel().catch(() => {});
-        reader.releaseLock();
-        reader = undefined;
-      }
-      await port.close().catch(() => {});
-      rx = [];
+      log(`Automatic ${baud} failed: ${error.message}`);
     }
   }
+
+  // Some Nano clones/USB-UART bridges do not expose DTR reliably through Web
+  // Serial. Give the user a generous manual-reset window as a fallback.
+  for (const baud of BAUD_RATES) {
+    try {
+      log(`Trying manual reset fallback at ${baud} baud`);
+      setMessage(`Auto-reset failed. Press the physical RESET button on the Nano now (${baud} baud)...`);
+      const signature = await tryBaud(baud, true);
+      return finishDetection(baud, signature);
+    } catch (error) {
+      lastError = error;
+      log(`Manual ${baud} failed: ${error.message}`);
+    }
+  }
+
   setConnected(false);
-  throw new Error(`Could not detect Nano bootloader at 115200 or 57600 baud. ${lastError?.message ?? ''}`);
+  throw new Error(`Could not enter the Nano bootloader. Auto-reset and manual-reset sync both failed. ${lastError?.message ?? ''}`);
+}
+
+function finishDetection(baud, signature) {
+  const signatureText = signature.map(hexByte).join(' ');
+  log(`Signature ${signatureText}`);
+  if (signatureText !== '1E 95 0F') log('WARNING: signature is not ATmega328P (1E 95 0F)');
+  selectedBaud = baud;
+  baudElement.textContent = String(baud);
+  signatureElement.textContent = signatureText;
+  meta.hidden = false;
+  setConnected(true);
+  setMessage(`Bootloader detected at ${baud} baud.`, 'success');
 }
 
 async function ensureBootloader() {
   if (!port) throw new Error('Connect the Nano first.');
-  if (!port.readable || !port.writable) await port.open({ baudRate: selectedBaud, dataBits: 8, stopBits: 1, parity: 'none', flowControl: 'none' });
+  if (!port.readable || !port.writable) await openPort(selectedBaud);
   await resetNano();
-  await sync();
+  try {
+    await sync(10);
+  } catch (error) {
+    setMessage('Auto-reset failed. Press RESET on the Nano now...');
+    log(`Auto-reset before dump failed: ${error.message}; waiting for manual reset`);
+    await sync(16);
+  }
 }
 
 async function readFlash() {
@@ -217,7 +252,7 @@ async function readFlash() {
       await command([STK_LOAD_ADDRESS, wordAddress & 0xff, (wordAddress >> 8) & 0xff]);
       const block = await command([STK_READ_PAGE, 0x00, PAGE_SIZE, 0x46], PAGE_SIZE, 1600);
       data.set(block, address);
-      const done = address + PAGE_SIZE;
+      const done = Math.min(address + PAGE_SIZE, FLASH_SIZE);
       progressBar.style.width = `${(done / FLASH_SIZE) * 100}%`;
       dumpedElement.textContent = `${done} bytes`;
       setMessage(`Reading flash: ${done} / ${FLASH_SIZE} bytes...`);
