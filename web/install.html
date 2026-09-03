@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="description" content="Install iButton Programmer firmware on a Seeed Studio XIAO ESP32-C3 directly from your browser.">
+  <meta name="theme-color" content="#009ac7">
+  <meta name="color-scheme" content="light">
+  <title>Install iButton Programmer</title>
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+</head>
+<body>
+  <canvas id="particles" aria-hidden="true"></canvas>
+
+  <main class="card">
+    <header>
+      <div>
+        <p class="eyebrow">iButton Programmer</p>
+        <h1>Install firmware</h1>
+      </div>
+    </header>
+
+    <p class="hint">Connect a Seeed Studio XIAO ESP32-C3 with a USB-C data cable, then install the latest firmware.</p>
+
+    <div class="actions">
+      <esp-web-install-button manifest="firmware/manifest.json">
+        <button slot="activate" class="primary wide">Install firmware</button>
+        <span slot="unsupported">Use a Chromium-based browser with Web Serial support.</span>
+      </esp-web-install-button>
+    </div>
+
+    <p class="hint">After installation, return to the programmer to read or write an iButton.</p>
+    <a href="./" class="primary wide" style="display:block;text-align:center;text-decoration:none;box-sizing:border-box;">Open programmer</a>
+  </main>
+
+  <script src="particles.js" defer></script>
+</body>
+</html>
