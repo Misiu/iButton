@@ -17,6 +17,7 @@ static constexpr uint32_t SERIAL_BAUD = 9600;
 static constexpr size_t COMMAND_SIZE = 11;
 static constexpr uint32_t TOUCH_TIMEOUT_MS = 10000;
 static constexpr uint32_t RW1990_PROGRAM_DELAY_MS = 10;
+static constexpr uint32_t VERIFY_TIMEOUT_MS = 1200;
 
 OneWire oneWire(IBUTTON_PIN);
 
@@ -27,13 +28,6 @@ void setProbeLed(bool on) {
 
 void releaseOneWireLine() {
   pinMode(IBUTTON_PIN, INPUT);
-}
-
-void pullOneWireLow(uint32_t microseconds) {
-  pinMode(IBUTTON_PIN, OUTPUT);
-  digitalWrite(IBUTTON_PIN, LOW);
-  if (microseconds > 0) delayMicroseconds(microseconds);
-  releaseOneWireLine();
 }
 
 void programRw1990Bit(bool one) {
@@ -48,6 +42,12 @@ void programRw1990Byte(uint8_t value) {
   for (uint8_t bit = 0; bit < 8; ++bit) {
     programRw1990Bit((value & 0x01) != 0);
     value >>= 1;
+  }
+}
+
+void programRw1990Rom(const uint8_t rom[8], bool invertBytes) {
+  for (size_t i = 0; i < 8; ++i) {
+    programRw1990Byte(invertBytes ? static_cast<uint8_t>(~rom[i]) : rom[i]);
   }
 }
 
@@ -73,6 +73,11 @@ bool waitForRom(uint8_t rom[8], uint32_t timeoutMs) {
   return false;
 }
 
+bool verifyRom(const uint8_t expected[8]) {
+  uint8_t actual[8];
+  return waitForRom(actual, VERIFY_TIMEOUT_MS) && memcmp(actual, expected, 8) == 0;
+}
+
 void printRom(const uint8_t rom[8]) {
   for (size_t i = 0; i < 8; ++i) {
     if (i) Serial.print(' ');
@@ -82,33 +87,63 @@ void printRom(const uint8_t rom[8]) {
   Serial.println();
 }
 
-bool writeRw1990(const uint8_t rom[8]) {
-  if (!oneWire.reset()) return false;
-  oneWire.write(0xD1);
-  pullOneWireLow(60);
-  delay(RW1990_PROGRAM_DELAY_MS);
+// First try: exact programming sequence recovered from the known-working legacy Nano.
+bool writeLegacyNano(const uint8_t rom[8]) {
+  oneWire.skip();                 // 0xCC
+  oneWire.reset();
+  oneWire.write(0x33);            // Read ROM preamble used by the legacy firmware
+  oneWire.skip();                 // 0xCC
+  oneWire.reset();
+  oneWire.write(0xD5);            // Write ROM
+  programRw1990Rom(rom, false);
+  oneWire.reset();
+  return verifyRom(rom);
+}
 
+void setRwWriteFlag(uint8_t command, bool flag) {
+  oneWire.reset();
+  oneWire.write(command);
+  oneWire.write_bit(flag ? 1 : 0);
+  delay(10);
+  releaseOneWireLine();
+}
+
+// RW1990.1 algorithm used by common Arduino duplicators:
+// D1 flag is inverted; bytes are programmed inverted.
+bool writeRw1990_1(const uint8_t rom[8]) {
+  setRwWriteFlag(0xD1, false);     // enable write
   if (!oneWire.reset()) return false;
   oneWire.write(0xD5);
-  for (size_t byteIndex = 0; byteIndex < 8; ++byteIndex) {
-    programRw1990Byte(rom[byteIndex]);
+  programRw1990Rom(rom, true);
+  setRwWriteFlag(0xD1, true);      // disable write
+  return verifyRom(rom);
+}
+
+// RW1990.2 algorithm used by common Arduino duplicators:
+// 1D flag has normal polarity; bytes are programmed normally.
+bool writeRw1990_2(const uint8_t rom[8]) {
+  setRwWriteFlag(0x1D, true);      // enable write
+  if (!oneWire.reset()) {
+    setRwWriteFlag(0x1D, false);
+    return false;
   }
+  oneWire.write(0xD5);
+  programRw1990Rom(rom, false);
+  setRwWriteFlag(0x1D, false);     // disable write
+  return verifyRom(rom);
+}
 
-  if (!oneWire.reset()) return false;
-  oneWire.write(0xD1);
-  pullOneWireLow(10);
-  delay(RW1990_PROGRAM_DELAY_MS);
-
-  uint8_t verify[8];
-  return waitForRom(verify, 1000) && memcmp(verify, rom, 8) == 0;
+bool writeRw1990(const uint8_t rom[8]) {
+  if (writeLegacyNano(rom)) return true;
+  if (writeRw1990_1(rom)) return true;
+  if (writeRw1990_2(rom)) return true;
+  return false;
 }
 
 void handleRead() {
   setProbeLed(true);
-
   uint8_t rom[8];
   const bool found = waitForRom(rom, TOUCH_TIMEOUT_MS);
-
   setProbeLed(false);
 
   if (!found) {
@@ -126,7 +161,6 @@ void handleWrite(const uint8_t command[COMMAND_SIZE]) {
   }
 
   setProbeLed(true);
-
   uint8_t currentRom[8];
   if (!waitForRom(currentRom, TOUCH_TIMEOUT_MS)) {
     setProbeLed(false);
@@ -154,12 +188,10 @@ void processCommand(const uint8_t command[COMMAND_SIZE]) {
     handleRead();
     return;
   }
-
   if (command[0] == 0x00 && command[1] == 0x01) {
     handleWrite(command);
     return;
   }
-
   Serial.println("ERROR UNKNOWN_COMMAND");
 }
 
