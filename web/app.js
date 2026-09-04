@@ -45,7 +45,7 @@ let closingPort = false;
 const defaultLabels = {
   read: 'Read',
   write: 'Write',
-  detect: 'Detect type'
+  detect: 'Detect button type'
 };
 
 function sleep(ms) {
