@@ -1,16 +1,24 @@
 #include <Arduino.h>
+#include <ctype.h>
+#include <string.h>
 #include <iButtonTag.h>
 
 static constexpr uint8_t IBUTTON_PIN = 2;
 static constexpr uint8_t LED_PIN = 4;
+static constexpr uint8_t SUPPORTED_FAMILY_CODE = 0x01;
 static constexpr uint32_t SERIAL_BAUD = 9600;
 static constexpr uint32_t TOUCH_TIMEOUT_MS = 5000;
-static constexpr uint32_t VERIFY_TIMEOUT_MS = 1000;
 static constexpr uint32_t POLL_INTERVAL_MS = 25;
+static constexpr uint32_t STABLE_READ_GAP_MS = 60;
+static constexpr uint32_t PREWRITE_CONFIRM_TIMEOUT_MS = 800;
 static constexpr uint32_t VERIFY_DELAY_MS = 100;
+static constexpr uint32_t VERIFY_TIMEOUT_MS = 1200;
 static constexpr size_t COMMAND_BUFFER_SIZE = 32;
 static const char FW_VERSION[] = "0.4.0";
 static const char PROTOCOL_VERSION[] = "3";
+
+static constexpr int8_t READ_STATUS_UNSTABLE = -3;
+static constexpr int8_t CONFIRM_STATUS_DIFFERENT = -4;
 
 iButtonTag iButton(IBUTTON_PIN);
 
@@ -26,6 +34,10 @@ bool isSupportedWritableType(int8_t type) {
   return type == IBUTTON_RW1990V1 || type == IBUTTON_RW1990V2;
 }
 
+bool isSupportedFamily(const uint8_t rom[8]) {
+  return rom[0] == SUPPORTED_FAMILY_CODE;
+}
+
 const __FlashStringHelper *typeName(int8_t type) {
   switch (type) {
     case IBUTTON_RW1990V1: return F("RW1990V1");
@@ -34,30 +46,94 @@ const __FlashStringHelper *typeName(int8_t type) {
   }
 }
 
-int8_t waitForRead(uint8_t rom[8], uint32_t timeoutMs) {
-  const uint32_t start = millis();
-  int8_t lastError = 0;
+void printReadFailure(int8_t status) {
+  if (status == -1) {
+    Serial.println(F("ERROR ROM_CRC"));
+  } else if (status == -2) {
+    Serial.println(F("ERROR INVALID_BUTTON_DATA"));
+  } else if (status == READ_STATUS_UNSTABLE) {
+    Serial.println(F("ERROR UNSTABLE_CONTACT"));
+  } else {
+    Serial.println(F("ERROR NO_BUTTON"));
+  }
+}
 
-  while (millis() - start < timeoutMs) {
-    const int8_t status = iButton.readCode(rom);
-    if (status > 0) return status;
-    if (status < 0) lastError = status;
+int8_t waitForStableRead(uint8_t rom[8], uint32_t timeoutMs) {
+  const uint32_t startedAt = millis();
+  int8_t lastError = 0;
+  bool sawUnstableRead = false;
+
+  while (millis() - startedAt < timeoutMs) {
+    uint8_t first[8];
+    const int8_t firstStatus = iButton.readCode(first);
+    if (firstStatus > 0) {
+      delay(STABLE_READ_GAP_MS);
+
+      uint8_t second[8];
+      const int8_t secondStatus = iButton.readCode(second);
+      if (secondStatus > 0 && iButtonTag::equalCode(first, second)) {
+        memcpy(rom, second, sizeof(second));
+        return 1;
+      }
+
+      sawUnstableRead = true;
+      if (secondStatus < 0) lastError = secondStatus;
+    } else if (firstStatus < 0) {
+      lastError = firstStatus;
+    }
+
     delay(POLL_INTERVAL_MS);
   }
 
-  return lastError;
+  return sawUnstableRead ? READ_STATUS_UNSTABLE : lastError;
 }
 
-void printReadError(int8_t status) {
-  if (status == -1) Serial.println(F("ERROR ROM_CRC"));
-  else if (status == -2) Serial.println(F("ERROR INVALID_BUTTON_DATA"));
-  else Serial.println(F("ERROR NO_BUTTON"));
+int8_t confirmSameRom(const uint8_t expected[8], uint32_t timeoutMs) {
+  uint8_t actual[8];
+  const int8_t status = waitForStableRead(actual, timeoutMs);
+  if (status < 1) return status;
+  return iButtonTag::equalCode(actual, expected) ? 1 : CONFIRM_STATUS_DIFFERENT;
+}
+
+// Returns 1 after two matching reads of the expected ROM, -2 when a different
+// valid ROM is observed, -1 after invalid reads, or 0 when no tag is detected.
+int8_t verifyWrittenRom(const uint8_t expected[8], uint32_t timeoutMs) {
+  const uint32_t startedAt = millis();
+  bool sawValidDifferentRom = false;
+  bool sawInvalidRom = false;
+
+  while (millis() - startedAt < timeoutMs) {
+    uint8_t first[8];
+    const int8_t firstStatus = iButton.readCode(first);
+    if (firstStatus > 0) {
+      if (!iButtonTag::equalCode(first, expected)) {
+        sawValidDifferentRom = true;
+        delay(POLL_INTERVAL_MS);
+        continue;
+      }
+
+      delay(STABLE_READ_GAP_MS);
+      uint8_t second[8];
+      const int8_t secondStatus = iButton.readCode(second);
+      if (secondStatus > 0 && iButtonTag::equalCode(second, expected)) return 1;
+      if (secondStatus > 0) sawValidDifferentRom = true;
+      else if (secondStatus < 0) sawInvalidRom = true;
+    } else if (firstStatus < 0) {
+      sawInvalidRom = true;
+    }
+
+    delay(POLL_INTERVAL_MS);
+  }
+
+  if (sawValidDifferentRom) return -2;
+  if (sawInvalidRom) return -1;
+  return 0;
 }
 
 int8_t hexNibble(char value) {
   if (value >= '0' && value <= '9') return value - '0';
+  value = static_cast<char>(toupper(static_cast<unsigned char>(value)));
   if (value >= 'A' && value <= 'F') return value - 'A' + 10;
-  if (value >= 'a' && value <= 'f') return value - 'a' + 10;
   return -1;
 }
 
@@ -76,7 +152,7 @@ bool parseSerial(const char *text, uint8_t rom[8]) {
     serial[i] = static_cast<uint8_t>((high << 4) | low);
   }
 
-  rom[0] = 0x01;
+  rom[0] = SUPPORTED_FAMILY_CODE;
   for (uint8_t i = 0; i < 6; ++i) rom[i + 1] = serial[5 - i];
   iButtonTag::updateChecksum(rom);
   return iButtonTag::testCode(rom) > 0;
@@ -101,11 +177,15 @@ void handleInfo() {
 void handleRead() {
   uint8_t rom[8];
   setLed(true);
-  const int8_t status = waitForRead(rom, TOUCH_TIMEOUT_MS);
+  const int8_t status = waitForStableRead(rom, TOUCH_TIMEOUT_MS);
   setLed(false);
 
   if (status < 1) {
-    printReadError(status);
+    printReadFailure(status);
+    return;
+  }
+  if (!isSupportedFamily(rom)) {
+    Serial.println(F("ERROR UNSUPPORTED_FAMILY"));
     return;
   }
 
@@ -115,59 +195,45 @@ void handleRead() {
 }
 
 void handleDetect() {
-  uint8_t rom[8];
+  uint8_t originalRom[8];
   setLed(true);
 
-  const int8_t readStatus = waitForRead(rom, TOUCH_TIMEOUT_MS);
+  const int8_t readStatus = waitForStableRead(originalRom, TOUCH_TIMEOUT_MS);
   if (readStatus < 1) {
     setLed(false);
-    printReadError(readStatus);
+    printReadFailure(readStatus);
+    return;
+  }
+  if (!isSupportedFamily(originalRom)) {
+    setLed(false);
+    Serial.println(F("ERROR UNSUPPORTED_FAMILY"));
     return;
   }
 
-  // Detection can touch writable-tag control flags. Run it once, and only
-  // after a stable, CRC-valid tag has already been read.
+  // Detection can touch writable-tag control flags. Run it exactly once and
+  // only after two equal, CRC-valid reads of a supported family.
   const int8_t type = iButton.detectWritableType();
+  if (!isSupportedWritableType(type)) {
+    setLed(false);
+    if (type < 0) Serial.println(F("ERROR BUTTON_REMOVED"));
+    else if (type > 0) Serial.println(F("ERROR UNSUPPORTED_TYPE"));
+    else Serial.println(F("ERROR NOT_WRITABLE_OR_UNSUPPORTED"));
+    return;
+  }
+
+  const int8_t confirmStatus = confirmSameRom(originalRom, PREWRITE_CONFIRM_TIMEOUT_MS);
   setLed(false);
 
-  if (isSupportedWritableType(type)) {
+  if (confirmStatus == CONFIRM_STATUS_DIFFERENT) {
+    Serial.println(F("ERROR BUTTON_CHANGED"));
+  } else if (confirmStatus == READ_STATUS_UNSTABLE) {
+    Serial.println(F("ERROR UNSTABLE_CONTACT"));
+  } else if (confirmStatus < 1) {
+    Serial.println(F("ERROR BUTTON_REMOVED"));
+  } else {
     Serial.print(F("OK DETECT TYPE="));
     Serial.println(typeName(type));
-  } else if (type < 0) {
-    Serial.println(F("ERROR BUTTON_REMOVED"));
-  } else if (type > 0) {
-    Serial.println(F("ERROR UNSUPPORTED_TYPE"));
-  } else {
-    Serial.println(F("ERROR NOT_WRITABLE_OR_UNSUPPORTED"));
   }
-}
-
-enum class VerifyResult : uint8_t {
-  MATCH,
-  NO_BUTTON,
-  INVALID_DATA,
-  MISMATCH
-};
-
-VerifyResult verifyWrittenRom(const uint8_t expected[8]) {
-  const uint32_t start = millis();
-  bool sawInvalidData = false;
-
-  while (millis() - start < VERIFY_TIMEOUT_MS) {
-    uint8_t actual[8];
-    const int8_t status = iButton.readCode(actual);
-
-    if (status > 0) {
-      return iButtonTag::equalCode(actual, expected)
-        ? VerifyResult::MATCH
-        : VerifyResult::MISMATCH;
-    }
-
-    if (status < 0) sawInvalidData = true;
-    delay(POLL_INTERVAL_MS);
-  }
-
-  return sawInvalidData ? VerifyResult::INVALID_DATA : VerifyResult::NO_BUTTON;
 }
 
 void handleWrite(const char *argument) {
@@ -179,70 +245,74 @@ void handleWrite(const char *argument) {
 
   setLed(true);
 
-  // Read-only preflight: wait for one stable, CRC-valid tag.
+  // Preflight is read-only. Two equal, CRC-valid reads are required before any
+  // writable-tag command is sent.
   uint8_t originalRom[8];
-  const int8_t readStatus = waitForRead(originalRom, TOUCH_TIMEOUT_MS);
+  const int8_t readStatus = waitForStableRead(originalRom, TOUCH_TIMEOUT_MS);
   if (readStatus < 1) {
     setLed(false);
-    printReadError(readStatus);
+    printReadFailure(readStatus);
+    return;
+  }
+  if (!isSupportedFamily(originalRom)) {
+    setLed(false);
+    Serial.println(F("ERROR UNSUPPORTED_FAMILY"));
     return;
   }
 
-  // Avoid programming entirely when the requested value is already present.
+  // Avoid entering write mode when the requested serial already matches.
   if (iButtonTag::equalCode(originalRom, targetRom)) {
     setLed(false);
-    Serial.println(F("OK WRITE UNCHANGED"));
+    Serial.println(F("OK WRITE STATUS=UNCHANGED"));
     return;
   }
 
-  // Detect exactly once. Only the two supported RW1990 families may proceed.
+  // Detect one writable type once. Only the two RW1990 families are allowed.
   const int8_t type = iButton.detectWritableType();
   if (!isSupportedWritableType(type)) {
     setLed(false);
-    if (type < 0) Serial.println(F("ERROR BUTTON_REMOVED"));
+    if (type < 0) Serial.println(F("ERROR BUTTON_REMOVED_BEFORE_WRITE"));
     else if (type > 0) Serial.println(F("ERROR UNSUPPORTED_TYPE"));
     else Serial.println(F("ERROR NOT_WRITABLE_OR_UNSUPPORTED"));
     return;
   }
 
-  // Make sure the same tag is still present immediately before programming.
-  uint8_t confirmRom[8];
-  const int8_t confirmStatus = iButton.readCode(confirmRom);
+  // Require two equal reads after detection. Any unstable contact or tag swap
+  // aborts the operation before programming begins.
+  const int8_t confirmStatus = confirmSameRom(originalRom, PREWRITE_CONFIRM_TIMEOUT_MS);
   if (confirmStatus < 1) {
     setLed(false);
-    Serial.println(F("ERROR BUTTON_REMOVED"));
-    return;
-  }
-  if (!iButtonTag::equalCode(originalRom, confirmRom)) {
-    setLed(false);
-    Serial.println(F("ERROR BUTTON_CHANGED"));
+    if (confirmStatus == CONFIRM_STATUS_DIFFERENT) {
+      Serial.println(F("ERROR BUTTON_CHANGED"));
+    } else if (confirmStatus == READ_STATUS_UNSTABLE) {
+      Serial.println(F("ERROR UNSTABLE_CONTACT_BEFORE_WRITE"));
+    } else {
+      Serial.println(F("ERROR BUTTON_REMOVED_BEFORE_WRITE"));
+    }
     return;
   }
 
-  // Type is already known and target ROM is valid. Disable library-level
-  // re-detection so exactly one programming algorithm is executed once.
+  // Type is already known and target ROM is valid. check=false prevents a
+  // second detection cycle, so exactly one programming algorithm runs once.
   const int8_t writeStatus = iButton.writeCode(targetRom, type, false);
   if (writeStatus < 1) {
     setLed(false);
-    Serial.println(writeStatus == 0 ? F("ERROR BUTTON_REMOVED") : F("ERROR WRITE_FAILED"));
+    Serial.println(writeStatus == 0 ? F("ERROR WRITE_INTERRUPTED") : F("ERROR WRITE_FAILED"));
     return;
   }
 
   delay(VERIFY_DELAY_MS);
-  const VerifyResult verifyResult = verifyWrittenRom(targetRom);
+  const int8_t verifyStatus = verifyWrittenRom(targetRom, VERIFY_TIMEOUT_MS);
   setLed(false);
 
-  if (verifyResult == VerifyResult::NO_BUTTON) {
-    Serial.println(F("ERROR VERIFY_READ_FAILED"));
-    return;
-  }
-  if (verifyResult == VerifyResult::INVALID_DATA || verifyResult == VerifyResult::MISMATCH) {
+  if (verifyStatus == 1) {
+    Serial.print(F("OK WRITE TYPE="));
+    Serial.println(typeName(type));
+  } else if (verifyStatus == -2) {
     Serial.println(F("ERROR VERIFY_FAILED"));
-    return;
+  } else {
+    Serial.println(F("ERROR VERIFY_READ_FAILED"));
   }
-
-  Serial.print(F("OK WRITE TYPE="));
-  Serial.println(typeName(type));
 }
 
 void uppercaseAscii(char *text) {
@@ -295,6 +365,7 @@ void resetCommandBuffer() {
 }
 
 void setup() {
+  pinMode(IBUTTON_PIN, INPUT);
   pinMode(LED_PIN, OUTPUT);
   setLed(false);
   Serial.begin(SERIAL_BAUD);
