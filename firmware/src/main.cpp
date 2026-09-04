@@ -4,29 +4,14 @@
 static constexpr uint8_t IBUTTON_PIN = 2;
 static constexpr uint8_t LED_PIN = 4;
 static constexpr uint32_t SERIAL_BAUD = 9600;
-static constexpr size_t COMMAND_SIZE = 11;
 static constexpr uint32_t TOUCH_TIMEOUT_MS = 5000;
 static constexpr uint32_t POLL_INTERVAL_MS = 20;
-static const char FW_VERSION[] = "0.2.0";
+static const char FW_VERSION[] = "0.3.0";
+static const char PROTOCOL_VERSION[] = "3";
 
 iButtonTag iButton(IBUTTON_PIN);
 
-uint8_t additiveChecksum(const uint8_t *data, size_t length) {
-  uint8_t sum = 0;
-  for (size_t i = 0; i < length; ++i) sum += data[i];
-  return sum;
-}
-
 void setLed(bool on) { digitalWrite(LED_PIN, on ? HIGH : LOW); }
-
-void printRom(const uint8_t rom[8]) {
-  for (uint8_t i = 0; i < 8; ++i) {
-    if (rom[i] < 0x10) Serial.print('0');
-    Serial.print(rom[i], HEX);
-    if (i != 7) Serial.print(' ');
-  }
-  Serial.println();
-}
 
 const __FlashStringHelper *typeName(int8_t type) {
   switch (type) {
@@ -60,19 +45,77 @@ int8_t waitForWritableType(uint32_t timeoutMs) {
   return IBUTTON_UNKNOWN;
 }
 
+bool parseSerial(const String &text, uint8_t rom[8]) {
+  String hex;
+  hex.reserve(12);
+  for (size_t i = 0; i < text.length(); ++i) {
+    const char c = text[i];
+    if (isxdigit(c)) hex += static_cast<char>(toupper(c));
+  }
+  if (hex.length() != 12) return false;
+
+  uint8_t serial[6];
+  for (uint8_t i = 0; i < 6; ++i) {
+    const char pair[3] = { hex[i * 2], hex[i * 2 + 1], '\0' };
+    serial[i] = static_cast<uint8_t>(strtoul(pair, nullptr, 16));
+  }
+
+  rom[0] = 0x01;
+  for (uint8_t i = 0; i < 6; ++i) rom[i + 1] = serial[5 - i];
+  iButtonTag::updateChecksum(rom);
+  return true;
+}
+
+void printSerial(const uint8_t rom[8]) {
+  for (int8_t i = 6; i >= 1; --i) {
+    if (rom[i] < 0x10) Serial.print('0');
+    Serial.print(rom[i], HEX);
+    if (i != 1) Serial.print(' ');
+  }
+}
+
+void handleInfo() {
+  Serial.print(F("OK INFO PRODUCT=IBUTTON_PROGRAMMER FW="));
+  Serial.print(FW_VERSION);
+  Serial.print(F(" PROTO="));
+  Serial.print(PROTOCOL_VERSION);
+  Serial.println(F(" BOARD=NANO328P"));
+}
+
 void handleRead() {
   uint8_t rom[8];
   setLed(true);
   const int8_t status = waitForRead(rom, TOUCH_TIMEOUT_MS);
   setLed(false);
-  if (status > 0) printRom(rom);
-  else if (status == -1) Serial.println(F("ERROR ROM_CRC"));
-  else Serial.println(F("ERROR NO_BUTTON"));
+
+  if (status > 0) {
+    Serial.print(F("OK READ "));
+    printSerial(rom);
+    Serial.println();
+  } else if (status == -1) {
+    Serial.println(F("ERROR ROM_CRC"));
+  } else {
+    Serial.println(F("ERROR NO_BUTTON"));
+  }
 }
 
-void handleWrite(const uint8_t rom[8]) {
-  if (iButtonTag::testCode(rom) < 1) {
-    Serial.println(F("ERROR ROM_CRC"));
+void handleDetect() {
+  setLed(true);
+  const int8_t type = waitForWritableType(TOUCH_TIMEOUT_MS);
+  setLed(false);
+
+  if (type > 0) {
+    Serial.print(F("OK DETECT TYPE="));
+    Serial.println(typeName(type));
+  } else {
+    Serial.println(F("ERROR NOT_WRITABLE_OR_UNSUPPORTED"));
+  }
+}
+
+void handleWrite(const String &argument) {
+  uint8_t rom[8];
+  if (!parseSerial(argument, rom)) {
+    Serial.println(F("ERROR INVALID_SERIAL"));
     return;
   }
 
@@ -86,53 +129,35 @@ void handleWrite(const uint8_t rom[8]) {
 
   const int8_t result = iButton.writeCode(rom, type, true);
   setLed(false);
+
   if (result > 0) {
-    Serial.print(F("OK TYPE="));
+    Serial.print(F("OK WRITE TYPE="));
     Serial.println(typeName(type));
-  } else if (result == 0) Serial.println(F("ERROR BUTTON_REMOVED"));
-  else if (result == -21) Serial.println(F("ERROR VERIFY_FAILED"));
-  else if (result == -13) Serial.println(F("ERROR TYPE_CHANGED"));
-  else {
-    Serial.print(F("ERROR WRITE_FAILED "));
+  } else if (result == 0) {
+    Serial.println(F("ERROR BUTTON_REMOVED"));
+  } else if (result == -21) {
+    Serial.println(F("ERROR VERIFY_FAILED"));
+  } else if (result == -13) {
+    Serial.println(F("ERROR TYPE_CHANGED"));
+  } else {
+    Serial.print(F("ERROR WRITE_FAILED CODE="));
     Serial.println(result);
   }
 }
 
-void handleInfo() {
-  Serial.print(F("INFO IBUTTON_PROGRAMMER FW="));
-  Serial.print(FW_VERSION);
-  Serial.println(F(" PROTO=2 BOARD=NANO328P LIB=IBUTTONTAG"));
-}
-
-void handleDetect() {
-  setLed(true);
-  const int8_t type = waitForWritableType(TOUCH_TIMEOUT_MS);
-  setLed(false);
-  if (type > 0) {
-    Serial.print(F("TYPE "));
-    Serial.println(typeName(type));
-  } else Serial.println(F("ERROR NOT_WRITABLE_OR_UNSUPPORTED"));
-}
-
-void processLegacyCommand(const uint8_t command[COMMAND_SIZE]) {
-  if (additiveChecksum(command, COMMAND_SIZE - 1) != command[COMMAND_SIZE - 1]) {
-    Serial.println(F("ERROR COMMAND_CHECKSUM"));
-    return;
-  }
-  if (command[1] != 0x01) {
-    Serial.println(F("ERROR UNKNOWN_COMMAND"));
-    return;
-  }
-  if (command[0] == 0x01) handleRead();
-  else if (command[0] == 0x00) handleWrite(command + 2);
-  else Serial.println(F("ERROR UNKNOWN_COMMAND"));
-}
-
-void processTextCommand(String command) {
+void processCommand(String command) {
   command.trim();
-  command.toUpperCase();
-  if (command == "INFO" || command == "PING") handleInfo();
-  else if (command == "DETECT") handleDetect();
+  if (!command.length()) return;
+
+  const int separator = command.indexOf(' ');
+  String name = separator < 0 ? command : command.substring(0, separator);
+  String argument = separator < 0 ? String() : command.substring(separator + 1);
+  name.toUpperCase();
+
+  if (name == "INFO" || name == "PING") handleInfo();
+  else if (name == "READ") handleRead();
+  else if (name == "DETECT") handleDetect();
+  else if (name == "WRITE") handleWrite(argument);
   else Serial.println(F("ERROR UNKNOWN_COMMAND"));
 }
 
@@ -145,15 +170,5 @@ void setup() {
 
 void loop() {
   if (!Serial.available()) return;
-
-  const int first = Serial.peek();
-  if (first == 'I' || first == 'i' || first == 'P' || first == 'p' || first == 'D' || first == 'd') {
-    processTextCommand(Serial.readStringUntil('\n'));
-    return;
-  }
-
-  if (Serial.available() < COMMAND_SIZE) return;
-  uint8_t command[COMMAND_SIZE];
-  for (size_t i = 0; i < COMMAND_SIZE; ++i) command[i] = static_cast<uint8_t>(Serial.read());
-  processLegacyCommand(command);
+  processCommand(Serial.readStringUntil('\n'));
 }
