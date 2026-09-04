@@ -1,124 +1,108 @@
 # iButton Programmer
 
-Web-based iButton reader/programmer using Web Serial, with firmware targeting the Seeed Studio XIAO ESP32-C3.
+Web-based iButton reader/programmer using Web Serial and an Arduino Nano ATmega328P.
 
 **Web programmer:** https://misiu.github.io/iButton/
 
 **Firmware installer:** https://misiu.github.io/iButton/install.html
 
-## Compatibility
+## Hardware
 
-The web application preserves the serial protocol used by the legacy Arduino Nano programmer, so the same page can be used with the existing Mini-USB device before migrating the hardware to XIAO ESP32-C3.
+The supported programmer is a classic **5 V Arduino Nano with ATmega328P**. USB-C Nano boards are suitable when they retain the ATmega328P/Nano electrical design and a compatible serial bootloader.
 
-Serial: 9600 baud, 8 data bits, no parity, 1 stop bit.
+The wiring reproduces the known-working legacy programmer:
 
-Legacy binary commands are 11 bytes:
+| Function | Arduino Nano | Connection |
+| --- | --- | --- |
+| iButton 1-Wire DATA | D2 | iButton center DATA contact |
+| DATA pull-up | 5V | 2.2 kOhm resistor to D2 |
+| Probe LED/status | D4 | Optional LED/status output; legacy probe used ~3.3 kOhm series resistor |
+| Ground | GND | iButton outer contact |
+
+```text
+              2.2 kOhm
+Nano 5V ------/\/\/\------+ 
+                            |
+Nano D2 --------------------+---- iButton center DATA
+
+Nano GND ------------------------ iButton outer shell
+```
+
+Do not connect the iButton DATA contact directly to 5 V. The 2.2 kOhm resistor is the 1-Wire pull-up between 5 V and D2.
+
+## Serial protocol
+
+Serial settings: **9600 baud, 8 data bits, no parity, 1 stop bit**.
+
+Commands are 11 raw binary bytes:
 
 - read: `01 01 00 00 00 00 00 00 00 00 02`
 - write: `00 01 <8-byte ROM> <checksum>`
 
-The final command byte is an 8-bit additive checksum of all previous command bytes.
+The final command byte is the 8-bit additive checksum of the preceding ten bytes.
 
-The iButton ROM is 8 bytes: family byte `0x01`, six serial-number bytes and Dallas/Maxim CRC-8 as byte 8. The serial-number field shown in the UI contains only the six serial-number bytes in human-readable order.
+The ROM contains family byte `0x01`, six serial bytes in Dallas ROM order, and Dallas/Maxim CRC-8. The browser presents only the six serial bytes in human-readable order and builds the complete ROM before sending a write command.
 
-For writes, the browser takes the six displayed serial bytes, reverses them into Dallas ROM byte order, prepends family byte `0x01`, calculates Dallas/Maxim CRC-8 over the first seven ROM bytes and appends that CRC as byte 8. The complete ROM is then wrapped in the legacy 11-byte write command. The XIAO firmware validates both the command checksum and ROM CRC before programming the RW1990.
+## Firmware behavior
 
-## Structure
+The firmware intentionally reproduces the behavior recovered from the known-working legacy Arduino Nano firmware. It does **not** contain ESP32/XIAO-specific code, alternative RW1990 write algorithms, automatic fallback programming methods, or experimental write-mode commands.
 
-- `firmware/` — XIAO ESP32-C3 firmware
-- `web/index.html` — normal Read/Write interface
-- `web/install.html` — browser firmware installer for XIAO ESP32-C3
-- `web/` — static site deployed to GitHub Pages
-- `.github/workflows/pages.yml` — builds firmware and deploys the web UI plus installer
-- `.github/workflows/firmware.yml` — firmware CI build
+### Read
 
-## Target hardware
+1. Turn D4 status output on.
+2. Search for an iButton on D2.
+3. Retry up to 3 times with approximately 1 second between failed searches.
+4. On success, print all 8 ROM bytes as uppercase hexadecimal separated by spaces.
+5. On failure, return `ERROR: Timeout`.
+6. Turn D4 off.
 
-Seeed Studio XIAO ESP32-C3.
+The recovered legacy firmware did not reject a ROM based on Dallas CRC during this operation, so the replacement firmware does not add that behavior.
 
-### Probe wiring
+### Write
 
-The legacy Arduino Nano programmer was physically traced and measured after exposing both series/pull-up resistors. Its wiring is:
+The write path is intentionally limited to the sequence recovered from the working legacy Nano:
 
-- Nano D2 is the 1-Wire DATA line. It is pulled up to 5 V through approximately **2.2 kOhm** and continues to probe pin 2.
-- Nano D4 drives probe pin 1 through approximately **3.3 kOhm**. This is the probe LED/status branch.
-- GND goes directly to probe pins 3 and 4.
+1. Turn D4 status output on.
+2. Search for the iButton up to 5 times, with approximately 1 second between failed searches.
+3. Send the recovered preamble: `0xCC`, reset, `0x33`, `0xCC`, reset, `0xD5`.
+4. Program the 8 ROM bytes from the host command, least-significant bit first.
+5. For a `1` bit: drive D2 LOW as output for approximately 60 us, release D2 to input, enable the AVR input pull-up, then wait approximately 10 ms.
+6. For a `0` bit: drive D2 LOW as output, release it immediately to input, enable the AVR input pull-up, then wait approximately 10 ms.
+7. Reset the 1-Wire bus and return `OK`.
+8. Turn D4 off.
 
-The measured D2 voltage of approximately 5 V while idle and transitions toward 0 V during activity is consistent with a pulled-up 1-Wire bus.
-
-For XIAO ESP32-C3 the same board labels are retained, but the pull-up is moved to 3.3 V because ESP32-C3 GPIO must not be exposed to the legacy 5 V bus:
-
-| Function | XIAO pin | ESP32-C3 GPIO | Connection |
-| --- | --- | --- | --- |
-| iButton 1-Wire DATA | D2 | GPIO4 | Probe pin 2 / iButton center DATA contact |
-| DATA pull-up | 3V3 | 3.3 V | 2.2 kOhm to D2/GPIO4 |
-| Probe LED/status | D4 | GPIO6 | Probe pin 1 through the existing ~3.3 kOhm resistor |
-| Ground | GND | GND | Probe pins 3 and 4 / iButton outer contact |
-
-```text
-                 2.2 kOhm
-XIAO 3V3 --------/\/\/\--------+
-                               |
-XIAO D2 / GPIO4 ---------------+---- probe pin 2 / iButton DATA
-
-XIAO D4 / GPIO6 --- 3.3 kOhm ------- probe pin 1 / LED
-
-XIAO GND ---------------------------- probe pin 3
-         +--------------------------- probe pin 4
-```
-
-For a minimal test without the probe, only DATA and GND touch the RW1990:
-
-```text
-3V3 ---- 2.2 kOhm ----+---- D2 / GPIO4
-                      |
-                      +---- iButton center DATA
-
-GND ----------------------- iButton outer shell
-```
-
-Do **not** reproduce the legacy 5 V DATA pull-up on the XIAO. Use 3.3 V for the 1-Wire pull-up.
-
-Firmware pin configuration in `firmware/platformio.ini`:
-
-```ini
--D IBUTTON_PIN=4
--D LED_PIN=6
--D LED_ACTIVE_HIGH=1
-```
-
-### Operation
-
-For both **Read** and **Write**, the firmware turns the probe LED on and waits up to 5 seconds for an iButton. If no valid iButton is detected within 5 seconds, the LED is turned off and `ERROR NO_BUTTON` is returned.
-
-For **Read**, the LED is turned off immediately after a valid ROM is read. For **Write**, the LED stays on while the detected writable iButton is programmed and verified, then turns off before the result is returned.
-
-RW1990 programming follows the reference Arduino duplicator sequence: enter write mode with `0xD1`, write the complete 8-byte ROM after `0xD5` LSB-first using the RW1990 programming pulses and approximately 10 ms programming time per bit, then use `0xD1` again to leave write mode. The firmware reads the ROM back afterwards and only returns `OK` when all 8 bytes match the requested ROM.
-
-The current implementation targets RW1990/RW1990.2-style writable tokens. Other writable iButton clone families can use different programming protocols.
+No D1/1D fallback algorithms and no additional write attempts are performed. The firmware mirrors the known-working legacy programmer rather than experimenting with other RW1990 variants.
 
 ## Web app
 
-Open https://misiu.github.io/iButton/ in a Web Serial capable browser, connect the programmer and use:
+Open https://misiu.github.io/iButton/ in a Chromium-based browser with Web Serial support.
 
-- **Read** — reads the iButton ROM and displays its six-byte serial number
-- **Write** — builds the complete family/serial/CRC ROM and sends it to the programmer
-
-Web Serial requires HTTPS or localhost for development.
+- **Read** reads the ROM and displays the six-byte serial number.
+- **Write** builds the family/serial/CRC ROM and sends the legacy write command.
+- **Protocol log** shows raw serial traffic and can be copied to the clipboard.
 
 ## Firmware installation
 
-Open https://misiu.github.io/iButton/install.html in a Chromium-based browser and connect the XIAO ESP32-C3 by USB-C. The installer uses ESP Web Tools and flashes the firmware binaries produced by the same PlatformIO build that is deployed with the site.
+Open https://misiu.github.io/iButton/install.html and connect the Arduino Nano by USB. The browser installer downloads the Nano HEX produced by CI and flashes it through the Nano STK500v1 serial bootloader.
 
-If a blank or corrupted XIAO does not enter the serial bootloader automatically, put it into the ESP32-C3 download mode and run the installer again.
+The installer tries the two common ATmega328P Nano bootloader speeds: **115200 baud** and **57600 baud**. This covers the common current and old Nano bootloader variants without changing the application firmware.
 
-## Firmware
+## Build
 
-The current firmware prototype uses PlatformIO with the Arduino framework:
+Firmware is built with PlatformIO for `nanoatmega328`:
 
 ```bash
 cd firmware
 pio run
 ```
 
-Arduino was chosen initially to keep the prototype small and to reuse the mature OneWire library. For production firmware, especially when application-level firmware updates, rollback and stricter device/version handling are added, moving the firmware to ESP-IDF remains possible without changing the browser protocol.
+The GitHub Pages workflow builds the same firmware and publishes `firmware.hex` for the browser installer.
+
+## Repository structure
+
+- `firmware/` — Arduino Nano ATmega328P firmware
+- `web/index.html` — Read/Write interface
+- `web/install.html` — Nano browser installer
+- `web/nano-installer.js` — STK500v1 Web Serial flasher
+- `.github/workflows/firmware.yml` — Nano firmware CI build
+- `.github/workflows/pages.yml` — builds Nano firmware and deploys the web application and installer
