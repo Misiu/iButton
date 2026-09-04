@@ -1,59 +1,14 @@
 #include <Arduino.h>
 #include <OneWire.h>
 
-#ifndef IBUTTON_PIN
-#define IBUTTON_PIN 4
-#endif
-
-#ifndef LED_PIN
-#define LED_PIN 6
-#endif
-
-#ifndef LED_ACTIVE_HIGH
-#define LED_ACTIVE_HIGH 1
-#endif
-
-#ifndef ENABLE_RW1990_WRITE
-#define ENABLE_RW1990_WRITE 0
-#endif
-
+static constexpr uint8_t IBUTTON_PIN = 2;
+static constexpr uint8_t LED_PIN = 4;
 static constexpr uint32_t SERIAL_BAUD = 9600;
 static constexpr size_t COMMAND_SIZE = 11;
-static constexpr uint32_t TOUCH_TIMEOUT_MS = 10000;
-static constexpr uint32_t RW1990_PROGRAM_DELAY_MS = 10;
-static constexpr uint32_t VERIFY_TIMEOUT_MS = 1200;
+static constexpr uint8_t READ_ATTEMPTS = 3;
+static constexpr uint8_t WRITE_ATTEMPTS = 5;
 
 OneWire oneWire(IBUTTON_PIN);
-
-void setProbeLed(bool on) {
-  const bool level = LED_ACTIVE_HIGH ? on : !on;
-  digitalWrite(LED_PIN, level ? HIGH : LOW);
-}
-
-void releaseOneWireLine() {
-  pinMode(IBUTTON_PIN, INPUT);
-}
-
-void programRw1990Bit(bool one) {
-  pinMode(IBUTTON_PIN, OUTPUT);
-  digitalWrite(IBUTTON_PIN, LOW);
-  if (one) delayMicroseconds(60);
-  releaseOneWireLine();
-  delay(RW1990_PROGRAM_DELAY_MS);
-}
-
-void programRw1990Byte(uint8_t value) {
-  for (uint8_t bit = 0; bit < 8; ++bit) {
-    programRw1990Bit((value & 0x01) != 0);
-    value >>= 1;
-  }
-}
-
-void programRw1990Rom(const uint8_t rom[8], bool invertBytes) {
-  for (size_t i = 0; i < 8; ++i) {
-    programRw1990Byte(invertBytes ? static_cast<uint8_t>(~rom[i]) : rom[i]);
-  }
-}
 
 uint8_t additiveChecksum(const uint8_t *data, size_t length) {
   uint8_t sum = 0;
@@ -61,131 +16,87 @@ uint8_t additiveChecksum(const uint8_t *data, size_t length) {
   return sum;
 }
 
-bool waitForRom(uint8_t rom[8], uint32_t timeoutMs) {
-  const uint32_t start = millis();
-  while (millis() - start < timeoutMs) {
+bool findRom(uint8_t rom[8], uint8_t attempts) {
+  for (uint8_t attempt = 0; attempt < attempts; ++attempt) {
     oneWire.reset_search();
-    if (oneWire.search(rom)) {
-      if (OneWire::crc8(rom, 7) != rom[7]) {
-        delay(50);
-        continue;
-      }
-      return true;
-    }
-    delay(25);
+    if (oneWire.search(rom)) return true;
+    delay(1000);
   }
   return false;
 }
 
-bool verifyRom(const uint8_t expected[8]) {
-  uint8_t actual[8];
-  return waitForRom(actual, VERIFY_TIMEOUT_MS) && memcmp(actual, expected, 8) == 0;
-}
-
 void printRom(const uint8_t rom[8]) {
-  for (size_t i = 0; i < 8; ++i) {
-    if (i) Serial.print(' ');
+  for (uint8_t i = 0; i < 8; ++i) {
     if (rom[i] < 0x10) Serial.print('0');
     Serial.print(rom[i], HEX);
+    if (i < 7) Serial.print(' ');
   }
   Serial.println();
 }
 
-bool writeLegacyNano(const uint8_t rom[8]) {
-  oneWire.skip();
-  oneWire.reset();
-  oneWire.write(0x33);
-  oneWire.skip();
-  oneWire.reset();
-  oneWire.write(0xD5);
-  programRw1990Rom(rom, false);
-  oneWire.reset();
-  return verifyRom(rom);
-}
-
-void setRwWriteFlag(uint8_t command, bool flag) {
-  oneWire.reset();
-  oneWire.write(command);
-  oneWire.write_bit(flag ? 1 : 0);
+void programBit(bool one) {
+  digitalWrite(IBUTTON_PIN, LOW);
+  pinMode(IBUTTON_PIN, OUTPUT);
+  if (one) delayMicroseconds(60);
+  pinMode(IBUTTON_PIN, INPUT);
+  digitalWrite(IBUTTON_PIN, HIGH);
   delay(10);
-  releaseOneWireLine();
 }
 
-bool writeRw1990_1(const uint8_t rom[8]) {
-  setRwWriteFlag(0xD1, false);
-  if (!oneWire.reset()) return false;
-  oneWire.write(0xD5);
-  programRw1990Rom(rom, true);
-  setRwWriteFlag(0xD1, true);
-  return verifyRom(rom);
-}
-
-bool writeRw1990_2(const uint8_t rom[8]) {
-  setRwWriteFlag(0x1D, true);
-  if (!oneWire.reset()) {
-    setRwWriteFlag(0x1D, false);
-    return false;
+void programByte(uint8_t value) {
+  for (uint8_t bit = 0; bit < 8; ++bit) {
+    programBit((value & 0x01) != 0);
+    value >>= 1;
   }
-  oneWire.write(0xD5);
-  programRw1990Rom(rom, false);
-  setRwWriteFlag(0x1D, false);
-  return verifyRom(rom);
-}
-
-bool writeRw1990(const uint8_t rom[8]) {
-  if (writeLegacyNano(rom)) return true;
-  if (writeRw1990_1(rom)) return true;
-  if (writeRw1990_2(rom)) return true;
-  return false;
 }
 
 void handleRead() {
-  setProbeLed(true);
-  uint8_t rom[8];
-  const bool found = waitForRom(rom, TOUCH_TIMEOUT_MS);
-  setProbeLed(false);
+  digitalWrite(LED_PIN, HIGH);
 
-  if (!found) {
-    Serial.println("ERROR NO_BUTTON");
+  uint8_t rom[8];
+  if (!findRom(rom, READ_ATTEMPTS)) {
+    Serial.println("ERROR: Timeout");
+    digitalWrite(LED_PIN, LOW);
     return;
   }
+
   printRom(rom);
+  digitalWrite(LED_PIN, LOW);
 }
 
 void handleWrite(const uint8_t command[COMMAND_SIZE]) {
-#if !ENABLE_RW1990_WRITE
-  (void)command;
-  Serial.println("ERROR WRITE_DISABLED_3V3");
-  return;
-#else
-  const uint8_t *rom = command + 2;
-  if (OneWire::crc8(rom, 7) != rom[7]) {
-    Serial.println("ERROR ROM_CRC");
-    return;
-  }
+  digitalWrite(LED_PIN, HIGH);
 
-  setProbeLed(true);
   uint8_t currentRom[8];
-  if (!waitForRom(currentRom, TOUCH_TIMEOUT_MS)) {
-    setProbeLed(false);
-    Serial.println("ERROR NO_BUTTON");
+  if (!findRom(currentRom, WRITE_ATTEMPTS)) {
+    Serial.println("ERROR: Timeout");
+    digitalWrite(LED_PIN, LOW);
     return;
   }
 
-  const bool written = writeRw1990(rom);
-  setProbeLed(false);
+  // Exact sequence recovered from the known-working legacy Arduino Nano firmware.
+  oneWire.write(0xCC);
+  oneWire.reset();
+  oneWire.write(0x33);
+  oneWire.write(0xCC);
+  oneWire.reset();
+  oneWire.write(0xD5);
 
-  if (!written) {
-    Serial.println("ERROR WRITE_FAILED");
-    return;
-  }
+  for (uint8_t i = 0; i < 8; ++i) programByte(command[i + 2]);
+
+  oneWire.reset();
   Serial.println("OK");
-#endif
+  digitalWrite(LED_PIN, LOW);
 }
 
 void processCommand(const uint8_t command[COMMAND_SIZE]) {
   if (additiveChecksum(command, COMMAND_SIZE - 1) != command[COMMAND_SIZE - 1]) {
-    Serial.println("ERROR COMMAND_CHECKSUM");
+    Serial.println("ERROR:Invalid command");
+    return;
+  }
+
+  if (command[0] == 0x00 && command[1] == 0x01) {
+    handleWrite(command);
     return;
   }
 
@@ -193,30 +104,23 @@ void processCommand(const uint8_t command[COMMAND_SIZE]) {
     handleRead();
     return;
   }
-  if (command[0] == 0x00 && command[1] == 0x01) {
-    handleWrite(command);
-    return;
-  }
-  Serial.println("ERROR UNKNOWN_COMMAND");
+
+  Serial.println("ERROR:Unknown command");
 }
 
 void setup() {
+  pinMode(IBUTTON_PIN, INPUT);
   pinMode(LED_PIN, OUTPUT);
-  setProbeLed(false);
-  releaseOneWireLine();
+  digitalWrite(LED_PIN, LOW);
   Serial.begin(SERIAL_BAUD);
 }
 
 void loop() {
-  static uint8_t command[COMMAND_SIZE];
-  static size_t received = 0;
+  if (Serial.available() < COMMAND_SIZE) return;
 
-  while (Serial.available() && received < COMMAND_SIZE) {
-    command[received++] = static_cast<uint8_t>(Serial.read());
+  uint8_t command[COMMAND_SIZE];
+  for (size_t i = 0; i < COMMAND_SIZE; ++i) {
+    command[i] = static_cast<uint8_t>(Serial.read());
   }
-
-  if (received == COMMAND_SIZE) {
-    processCommand(command);
-    received = 0;
-  }
+  processCommand(command);
 }
