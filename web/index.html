@@ -23,33 +23,33 @@
       <span id="status" class="status disconnected">Disconnected</span>
     </header>
 
-    <button id="connect" class="primary wide">Connect device</button>
+    <button id="connect" type="button" class="primary wide">Connect device</button>
+    <p id="message" class="message" aria-live="polite"></p>
 
     <section id="programmer" hidden>
-      <label>Serial number</label>
-      <div id="serial-fields" class="serial-fields" role="group" aria-label="iButton serial number">
-        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 1">
-        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 2">
-        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 3">
-        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 4">
-        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 5">
-        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 6">
+      <label id="serial-label">Serial number</label>
+      <div id="serial-fields" class="serial-fields" role="group" aria-labelledby="serial-label">
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 1" disabled>
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 2" disabled>
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 3" disabled>
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 4" disabled>
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 5" disabled>
+        <input class="serial-byte" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="2" aria-label="Byte 6" disabled>
       </div>
       <p class="hint">6-byte serial number, e.g. 12 34 56 78 9A BC</p>
 
       <div class="actions">
-        <button id="read" class="primary">Read</button>
-        <button id="write" class="primary">Write</button>
+        <button id="read" type="button" class="primary" disabled>Read</button>
+        <button id="write" type="button" class="write-primary" disabled>Write</button>
       </div>
-
-      <p id="message" class="message" aria-live="polite"></p>
+      <p class="write-note">Write changes the serial number. Keep the iButton in place until verification finishes.</p>
 
       <details class="protocol-details">
         <summary>Debug</summary>
         <div class="protocol-toolbar">
           <span>Protocol diagnostics</span>
-          <div>
-            <button id="detect" type="button" class="log-button">Detect</button>
+          <div class="debug-actions">
+            <button id="detect" type="button" class="log-button" disabled>Detect type</button>
             <button id="copy-log" type="button" class="log-button">Copy</button>
             <button id="clear-log" type="button" class="log-button">Clear</button>
           </div>
