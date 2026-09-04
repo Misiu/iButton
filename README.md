@@ -1,52 +1,102 @@
 # iButton Programmer
 
-Web-based iButton reader/programmer using Web Serial and an Arduino Nano ATmega328P.
+A browser-based reader and programmer for supported writable iButtons, built around a classic 5 V Arduino Nano ATmega328P and Web Serial.
 
 **Web programmer:** https://misiu.github.io/iButton/
 
 **Firmware installer:** https://misiu.github.io/iButton/install.html
 
+**Current firmware:** `0.4.0`  
+**Protocol:** `3`
+
 ## Hardware
 
-The supported programmer is a classic **5 V Arduino Nano with ATmega328P**. USB-C Nano boards are suitable when they retain the ATmega328P/Nano electrical design and a compatible serial bootloader.
+Use a classic **5 V, 16 MHz Arduino Nano with ATmega328P**. A standard-size USB-C Nano clone is suitable when it retains the classic Nano pinout, 5 V logic, and a compatible serial bootloader.
 
 | Function | Arduino Nano | Connection |
 | --- | --- | --- |
-| iButton 1-Wire DATA | D2 | iButton center DATA contact |
+| iButton 1-Wire DATA | D2 | Center DATA contact |
 | DATA pull-up | 5V | 2.2 kOhm resistor to D2 |
-| Probe LED/status | D4 | Optional LED/status output; ~3.3 kOhm series resistor |
-| Ground | GND | iButton outer contact |
+| Status LED | D4 | Optional; use an appropriate series resistor |
+| Ground | GND | Outer iButton contact |
 
 ```text
               2.2 kOhm
 Nano 5V ------/\/\/\------+
                             |
-Nano D2 --------------------+---- iButton center DATA
+Nano D2 --------------------+---- iButton center DATA contact
 
-Nano GND ------------------------ iButton outer shell
+Nano GND ------------------------ iButton outer contact
 ```
 
-Do not connect the iButton DATA contact directly to 5 V. The 2.2 kOhm resistor is the 1-Wire pull-up between 5 V and D2.
+Do not connect the iButton DATA contact directly to 5 V. The 2.2 kOhm resistor must be between 5 V and D2.
+
+## Supported iButtons
+
+Firmware 0.4.0 writes only the following detected families:
+
+- RW1990 / RW1990.1-compatible tags (`RW1990V1`)
+- RW1990.2-compatible tags (`RW1990V2`)
+
+Other writable families and read-only tags are rejected before programming. Reads also require family code `0x01` and a valid Dallas/Maxim CRC-8.
+
+## Write-safety flow
+
+Writing is deliberately conservative:
+
+1. Validate the requested six-byte serial number and build a complete `0x01 + serial + CRC-8` ROM.
+2. Read the attached iButton twice and require two identical, CRC-valid results.
+3. Reject unsupported family codes.
+4. Return success without entering write mode when the ROM already matches the requested value.
+5. Detect the writable RW1990 type exactly once.
+6. Read the iButton twice again and confirm that the same tag is still present before programming starts.
+7. Run exactly one programming algorithm exactly once.
+8. Read the programmed ROM back and require two matching reads of all eight bytes.
+9. Return `OK` only after read-back verification succeeds.
+
+The firmware never cycles blindly through multiple programming algorithms. Errors detected before programming explicitly report that no serial number was written. Errors during or after programming warn that the tag must not be trusted until it has been read and rewritten successfully.
+
+No software can make an interrupted physical write risk-free. Keep the iButton firmly against the reader until the interface reports that verification has finished. Validate new hardware and new batches of RW1990 tags on expendable test units before using important tags.
+
+## Web interface
+
+The normal workflow remains intentionally small:
+
+1. Connect the programmer.
+2. Read an existing iButton or enter/paste a six-byte serial number.
+3. Press **Write** and keep the iButton in place until verification finishes.
+
+The Write button has a darker visual treatment because it changes the tag. During Read, Detect, and Write operations, inputs and competing actions are disabled. Write remains disabled until all six bytes are valid.
+
+Pasting supports all of these forms:
+
+```text
+11 22 33 44 55 66
+112233445566
+11.22.33.44.55.66
+11:22:33:44:55:66
+11-22-33-44-55-66
+```
+
+The collapsed **Debug** section contains writable-type detection, the raw protocol log, Copy, and Clear.
 
 ## Product protocol
 
 Serial settings: **9600 baud, 8 data bits, no parity, 1 stop bit**.
 
-The programmer uses a line-oriented text protocol. Each command ends with a newline.
+Commands and responses are newline-terminated ASCII.
 
-### Identify programmer
+### Identify the programmer
 
 ```text
 INFO
 ```
 
-Example response:
-
 ```text
-OK INFO PRODUCT=IBUTTON_PROGRAMMER FW=0.3.0 PROTO=3 BOARD=NANO328P
+OK INFO PRODUCT=IBUTTON_PROGRAMMER FW=0.4.0 PROTO=3 BOARD=NANO328P
 ```
 
-The web application requires a supported product and protocol version before enabling Read/Write.
+`PING` returns the same identity response.
 
 ### Read
 
@@ -54,86 +104,96 @@ The web application requires a supported product and protocol version before ena
 READ
 ```
 
-The programmer waits up to 5 seconds for an iButton. Example response:
-
 ```text
-OK READ 12 34 56 78 9A BC
+OK READ 11 22 33 44 55 66
 ```
 
-### Write
-
-```text
-WRITE 12 34 56 78 9A BC
-```
-
-The programmer validates the requested serial number, detects a supported writable tag, programs it using the appropriate implementation, and verifies the resulting code before reporting success.
-
-Example response:
-
-```text
-OK WRITE TYPE=RW1990V1
-```
-
-A successful response means that programming and verification both completed successfully.
-
-### Detect
+### Detect writable type
 
 ```text
 DETECT
 ```
 
-Example response:
-
 ```text
 OK DETECT TYPE=RW1990V1
 ```
 
-### Errors
+Detection is a diagnostic operation and remains in the Debug section.
 
-Errors use a stable machine-readable format, for example:
+### Write
+
+```text
+WRITE 11 22 33 44 55 66
+```
+
+Successful verified write:
+
+```text
+OK WRITE TYPE=RW1990V1
+```
+
+No-op because the tag already matches:
+
+```text
+OK WRITE STATUS=UNCHANGED
+```
+
+Errors use stable machine-readable codes, for example:
 
 ```text
 ERROR NO_BUTTON
-ERROR INVALID_SERIAL
+ERROR UNSTABLE_CONTACT_BEFORE_WRITE
 ERROR NOT_WRITABLE_OR_UNSUPPORTED
-ERROR BUTTON_REMOVED
+ERROR BUTTON_REMOVED_BEFORE_WRITE
+ERROR WRITE_INTERRUPTED
 ERROR VERIFY_FAILED
-ERROR TYPE_CHANGED
-ERROR UNKNOWN_COMMAND
 ```
-
-## Web app
-
-Open https://misiu.github.io/iButton/ in a Chromium-based browser with Web Serial support.
-
-The web app identifies the connected programmer before exposing the programming interface. It communicates only with the current product protocol; legacy binary commands are not supported.
-
-- **Read** reads and displays the six-byte serial number.
-- **Write** programs the requested serial number and reports success only after verification.
-- **Protocol log** shows product-level serial communication and diagnostic errors.
 
 ## Firmware installation
 
-Open https://misiu.github.io/iButton/install.html and connect the Arduino Nano by USB. The browser installer downloads the Nano HEX produced by CI and flashes it through the Nano STK500v1 serial bootloader.
+Open the browser installer, disconnect any iButton from the reader, and connect the Nano by USB.
 
-The installer tries the two common ATmega328P Nano bootloader speeds: **115200 baud** and **57600 baud**.
+Before reporting success, the installer:
 
-## Build
+1. downloads a versioned firmware manifest and Intel HEX file;
+2. validates the manifest, file size, SHA-256 digest, Intel HEX checksums, address range, and AVR reset vector;
+3. synchronizes with a common Nano bootloader at 115200 or 57600 baud;
+4. checks for the ATmega328P signature `1E 95 0F` before writing;
+5. programs only the 30,720-byte Nano application area, leaving the bootloader protected;
+6. reads the programmed application area back and compares it byte for byte.
 
-Firmware is built with PlatformIO for `nanoatmega328`:
+The installer reports success only after complete read-back verification passes.
+
+## Build and tests
+
+Firmware dependencies and the AVR platform are pinned in `firmware/platformio.ini`.
 
 ```bash
 cd firmware
-pio run
+pio run --environment nanoatmega328
 ```
 
-The GitHub Pages workflow builds the same firmware and publishes `firmware.hex` for the browser installer.
+Web protocol and Intel HEX parser tests:
+
+```bash
+cd web
+npm test
+```
+
+GitHub Actions compiles the firmware and runs the web tests before deploying the site. The Pages workflow publishes a manifest containing the firmware version, protocol version, file size, and SHA-256 digest.
 
 ## Repository structure
 
-- `firmware/` — Arduino Nano ATmega328P firmware
-- `web/index.html` — Read/Write interface
-- `web/install.html` — Nano browser installer
-- `web/nano-installer.js` — STK500v1 Web Serial flasher
-- `.github/workflows/firmware.yml` — Nano firmware CI build
-- `.github/workflows/pages.yml` — builds Nano firmware and deploys the web application and installer
+- `firmware/src/main.cpp` — Nano firmware and product protocol
+- `firmware/platformio.ini` — pinned build configuration
+- `web/index.html` — reader/programmer UI
+- `web/app.js` — Web Serial client
+- `web/protocol.js` — protocol parsing and user-facing error mapping
+- `web/install.html` — firmware installer UI
+- `web/nano-installer.js` — STK500v1 programmer and read-back verifier
+- `web/intel-hex.js` — strict Intel HEX parser
+- `web/tests/` — web unit tests
+- `.github/workflows/firmware.yml` — firmware CI build and artifact
+- `.github/workflows/pages.yml` — build, tests, manifest generation, and Pages deployment
+
+See `THIRD_PARTY_NOTICES.md` for required dependency notices.
