@@ -31,36 +31,13 @@ jobs:
           python-version: '3.x'
       - name: Install PlatformIO
         run: pip install platformio
-      - name: Build XIAO ESP32-C3 firmware
+      - name: Build Arduino Nano firmware
         working-directory: firmware
         run: pio run
-      - name: Prepare ESP Web Tools firmware
+      - name: Prepare Nano firmware
         run: |
           mkdir -p web/firmware
-          cp firmware/.pio/build/xiao_esp32c3/bootloader.bin web/firmware/bootloader.bin
-          cp firmware/.pio/build/xiao_esp32c3/partitions.bin web/firmware/partitions.bin
-          cp firmware/.pio/build/xiao_esp32c3/firmware.bin web/firmware/firmware.bin
-          BOOT_APP0=$(find ~/.platformio/packages/framework-arduinoespressif32 -name boot_app0.bin | head -n 1)
-          test -n "$BOOT_APP0"
-          cp "$BOOT_APP0" web/firmware/boot_app0.bin
-          cat > web/firmware/manifest.json <<'EOF'
-          {
-            "name": "iButton Programmer",
-            "version": "main",
-            "new_install_prompt_erase": true,
-            "builds": [
-              {
-                "chipFamily": "ESP32-C3",
-                "parts": [
-                  { "path": "bootloader.bin", "offset": 0 },
-                  { "path": "partitions.bin", "offset": 32768 },
-                  { "path": "boot_app0.bin", "offset": 57344 },
-                  { "path": "firmware.bin", "offset": 65536 }
-                ]
-              }
-            ]
-          }
-          EOF
+          cp firmware/.pio/build/nanoatmega328/firmware.hex web/firmware/firmware.hex
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@98ef48e41587a300b82de4cf298aa98b57b2faae
         with:
