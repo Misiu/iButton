@@ -10,18 +10,16 @@ Web-based iButton reader/programmer using Web Serial and an Arduino Nano ATmega3
 
 The supported programmer is a classic **5 V Arduino Nano with ATmega328P**. USB-C Nano boards are suitable when they retain the ATmega328P/Nano electrical design and a compatible serial bootloader.
 
-The wiring reproduces the known-working legacy programmer:
-
 | Function | Arduino Nano | Connection |
 | --- | --- | --- |
 | iButton 1-Wire DATA | D2 | iButton center DATA contact |
 | DATA pull-up | 5V | 2.2 kOhm resistor to D2 |
-| Probe LED/status | D4 | Optional LED/status output; legacy probe used ~3.3 kOhm series resistor |
+| Probe LED/status | D4 | Optional LED/status output; ~3.3 kOhm series resistor |
 | Ground | GND | iButton outer contact |
 
 ```text
               2.2 kOhm
-Nano 5V ------/\/\/\------+ 
+Nano 5V ------/\/\/\------+
                             |
 Nano D2 --------------------+---- iButton center DATA
 
@@ -30,62 +28,95 @@ Nano GND ------------------------ iButton outer shell
 
 Do not connect the iButton DATA contact directly to 5 V. The 2.2 kOhm resistor is the 1-Wire pull-up between 5 V and D2.
 
-## Serial protocol
+## Product protocol
 
 Serial settings: **9600 baud, 8 data bits, no parity, 1 stop bit**.
 
-Commands are 11 raw binary bytes:
+The programmer uses a line-oriented text protocol. Each command ends with a newline.
 
-- read: `01 01 00 00 00 00 00 00 00 00 02`
-- write: `00 01 <8-byte ROM> <checksum>`
+### Identify programmer
 
-The final command byte is the 8-bit additive checksum of the preceding ten bytes.
+```text
+INFO
+```
 
-The ROM contains family byte `0x01`, six serial bytes in Dallas ROM order, and Dallas/Maxim CRC-8. The browser presents only the six serial bytes in human-readable order and builds the complete ROM before sending a write command.
+Example response:
 
-## Firmware behavior
+```text
+OK INFO PRODUCT=IBUTTON_PROGRAMMER FW=0.3.0 PROTO=3 BOARD=NANO328P
+```
 
-The firmware intentionally reproduces the behavior recovered from the known-working legacy Arduino Nano firmware. It does **not** contain ESP32/XIAO-specific code, alternative RW1990 write algorithms, automatic fallback programming methods, or experimental write-mode commands.
+The web application requires a supported product and protocol version before enabling Read/Write.
 
 ### Read
 
-1. Turn D4 status output on.
-2. Search for an iButton on D2.
-3. Retry up to 3 times with approximately 1 second between failed searches.
-4. On success, print all 8 ROM bytes as uppercase hexadecimal separated by spaces.
-5. On failure, return `ERROR: Timeout`.
-6. Turn D4 off.
+```text
+READ
+```
 
-The recovered legacy firmware did not reject a ROM based on Dallas CRC during this operation, so the replacement firmware does not add that behavior.
+The programmer waits up to 5 seconds for an iButton. Example response:
+
+```text
+OK READ 12 34 56 78 9A BC
+```
 
 ### Write
 
-The write path is intentionally limited to the sequence recovered from the working legacy Nano:
+```text
+WRITE 12 34 56 78 9A BC
+```
 
-1. Turn D4 status output on.
-2. Search for the iButton up to 5 times, with approximately 1 second between failed searches.
-3. Send the recovered preamble: `0xCC`, reset, `0x33`, `0xCC`, reset, `0xD5`.
-4. Program the 8 ROM bytes from the host command, least-significant bit first.
-5. For a `1` bit: drive D2 LOW as output for approximately 60 us, release D2 to input, enable the AVR input pull-up, then wait approximately 10 ms.
-6. For a `0` bit: drive D2 LOW as output, release it immediately to input, enable the AVR input pull-up, then wait approximately 10 ms.
-7. Reset the 1-Wire bus and return `OK`.
-8. Turn D4 off.
+The programmer validates the requested serial number, detects a supported writable tag, programs it using the appropriate implementation, and verifies the resulting code before reporting success.
 
-No D1/1D fallback algorithms and no additional write attempts are performed. The firmware mirrors the known-working legacy programmer rather than experimenting with other RW1990 variants.
+Example response:
+
+```text
+OK WRITE TYPE=RW1990V1
+```
+
+A successful response means that programming and verification both completed successfully.
+
+### Detect
+
+```text
+DETECT
+```
+
+Example response:
+
+```text
+OK DETECT TYPE=RW1990V1
+```
+
+### Errors
+
+Errors use a stable machine-readable format, for example:
+
+```text
+ERROR NO_BUTTON
+ERROR INVALID_SERIAL
+ERROR NOT_WRITABLE_OR_UNSUPPORTED
+ERROR BUTTON_REMOVED
+ERROR VERIFY_FAILED
+ERROR TYPE_CHANGED
+ERROR UNKNOWN_COMMAND
+```
 
 ## Web app
 
 Open https://misiu.github.io/iButton/ in a Chromium-based browser with Web Serial support.
 
-- **Read** reads the ROM and displays the six-byte serial number.
-- **Write** builds the family/serial/CRC ROM and sends the legacy write command.
-- **Protocol log** shows raw serial traffic and can be copied to the clipboard.
+The web app identifies the connected programmer before exposing the programming interface. It communicates only with the current product protocol; legacy binary commands are not supported.
+
+- **Read** reads and displays the six-byte serial number.
+- **Write** programs the requested serial number and reports success only after verification.
+- **Protocol log** shows product-level serial communication and diagnostic errors.
 
 ## Firmware installation
 
 Open https://misiu.github.io/iButton/install.html and connect the Arduino Nano by USB. The browser installer downloads the Nano HEX produced by CI and flashes it through the Nano STK500v1 serial bootloader.
 
-The installer tries the two common ATmega328P Nano bootloader speeds: **115200 baud** and **57600 baud**. This covers the common current and old Nano bootloader variants without changing the application firmware.
+The installer tries the two common ATmega328P Nano bootloader speeds: **115200 baud** and **57600 baud**.
 
 ## Build
 
