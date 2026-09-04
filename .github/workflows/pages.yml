@@ -26,22 +26,83 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+
+      - uses: actions/setup-python@v7
         with:
-          python-version: '3.x'
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
       - name: Install PlatformIO
-        run: pip install platformio
+        run: python -m pip install --disable-pip-version-check platformio==6.1.19
+
       - name: Build Arduino Nano firmware
         working-directory: firmware
-        run: pio run
-      - name: Prepare Nano firmware
+        run: pio run --environment nanoatmega328
+
+      - name: Test web protocol and firmware parser
+        working-directory: web
+        run: npm test
+
+      - name: Validate browser JavaScript syntax
         run: |
-          mkdir -p web/firmware
-          cp firmware/.pio/build/nanoatmega328/firmware.hex web/firmware/firmware.hex
+          node --check web/app.js
+          node --check web/protocol.js
+          node --check web/intel-hex.js
+          node --check web/nano-installer.js
+          node --check web/particles.js
+
+      - name: Prepare verified Pages artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf _site
+          mkdir -p _site/firmware
+
+          rsync -a \
+            --exclude '/tests/' \
+            --exclude '/package.json' \
+            --exclude '/dump.html' \
+            --exclude '/dump.js' \
+            --exclude '/firmware/' \
+            web/ _site/
+
+          cp firmware/.pio/build/nanoatmega328/firmware.hex _site/firmware/firmware.hex
+
+          VERSION=$(sed -n 's/.*FW_VERSION\[\] = "\([^"]*\)".*/\1/p' firmware/src/main.cpp | head -n 1)
+          PROTOCOL=$(sed -n 's/.*PROTOCOL_VERSION\[\] = "\([^"]*\)".*/\1/p' firmware/src/main.cpp | head -n 1)
+          test -n "$VERSION"
+          test -n "$PROTOCOL"
+
+          SHA256=$(sha256sum _site/firmware/firmware.hex | awk '{print $1}')
+          SIZE=$(stat -c '%s' _site/firmware/firmware.hex)
+
+          cat > _site/firmware/manifest.json <<EOF_MANIFEST
+          {
+            "version": "$VERSION",
+            "protocol": "$PROTOCOL",
+            "board": "nanoatmega328",
+            "file": "firmware.hex",
+            "sha256": "$SHA256",
+            "size": $SIZE
+          }
+          EOF_MANIFEST
+
+          touch _site/.nojekyll
+          test -s _site/index.html
+          test -s _site/install.html
+          test -s _site/firmware/firmware.hex
+          test -s _site/firmware/manifest.json
+
       - uses: actions/configure-pages@v6
-      - uses: actions/upload-pages-artifact@98ef48e41587a300b82de4cf298aa98b57b2faae
+
+      - uses: actions/upload-pages-artifact@v5
         with:
-          path: web
+          path: _site
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
