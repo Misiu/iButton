@@ -3,106 +3,36 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="description" content="Install iButton Programmer firmware on a Seeed Studio XIAO ESP32-C3 directly from your browser.">
+  <meta name="description" content="Install iButton Programmer firmware on an Arduino Nano ATmega328P directly from your browser.">
   <meta name="theme-color" content="#009ac7">
   <meta name="color-scheme" content="light">
   <title>Install iButton Programmer</title>
   <link rel="icon" href="favicon.ico" sizes="any">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
-  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
   <style>
-    .install-copy {
-      margin: 0 0 22px;
-      color: var(--secondary-text);
-      font-size: 14px;
-      line-height: 1.5;
-    }
-
-    .install-actions {
-      display: grid;
-      gap: 12px;
-    }
-
-    .install-actions esp-web-install-button,
-    .install-actions .button-link {
-      display: block;
-      width: 100%;
-    }
-
-    .install-actions button,
-    .install-actions .button-link {
-      width: 100%;
-      min-height: 50px;
-      border: 0;
-      border-radius: 14px;
-      padding: 14px 20px;
-      background: var(--primary-button);
-      color: #fff;
-      box-shadow: 0 2px 6px rgba(0,127,163,.25);
-      font: inherit;
-      font-size: 15px;
-      font-weight: 500;
-      line-height: 22px;
-      text-align: center;
-      text-decoration: none;
-      cursor: pointer;
-      transition: background-color .15s ease, box-shadow .15s ease, transform .05s ease;
-    }
-
-    .install-actions button:hover,
-    .install-actions .button-link:hover {
-      background: var(--primary-dark);
-    }
-
-    .install-actions button:active,
-    .install-actions .button-link:active {
-      transform: translateY(1px);
-    }
-
-    .install-note {
-      margin: 18px 0 0;
-      color: var(--secondary-text);
-      font-size: 12px;
-      line-height: 1.5;
-      text-align: center;
-    }
-
-    .unsupported {
-      display: block;
-      margin-top: 10px;
-      color: var(--error);
-      font-size: 13px;
-      line-height: 1.45;
-      text-align: center;
-    }
+    .install-copy { margin: 0 0 22px; color: var(--secondary-text); font-size: 14px; line-height: 1.5; }
+    .install-actions { display: grid; gap: 12px; }
+    .install-actions button, .install-actions .button-link { width: 100%; min-height: 50px; border: 0; border-radius: 14px; padding: 14px 20px; background: var(--primary-button); color: #fff; box-shadow: 0 2px 6px rgba(0,127,163,.25); font: inherit; font-size: 15px; font-weight: 500; line-height: 22px; text-align: center; text-decoration: none; cursor: pointer; }
+    .install-actions button:hover, .install-actions .button-link:hover { background: var(--primary-dark); }
+    .install-actions button:disabled { opacity: .55; cursor: default; }
+    .install-note { margin: 18px 0 0; color: var(--secondary-text); font-size: 12px; line-height: 1.5; text-align: center; }
+    .install-log { margin-top: 16px; max-height: 180px; overflow: auto; white-space: pre-wrap; font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--secondary-text); }
   </style>
 </head>
 <body>
   <canvas id="particles" aria-hidden="true"></canvas>
-
   <main class="card">
-    <header>
-      <div>
-        <p class="eyebrow">iButton Programmer</p>
-        <h1>Install firmware</h1>
-      </div>
-    </header>
-
-    <p class="install-copy">Connect a Seeed Studio XIAO ESP32-C3 with a USB-C data cable, then install the latest firmware.</p>
-
+    <header><div><p class="eyebrow">iButton Programmer</p><h1>Install firmware</h1></div></header>
+    <p class="install-copy">Connect an Arduino Nano ATmega328P with a USB data cable. The installer flashes the exact Nano firmware built with this project.</p>
     <div class="install-actions">
-      <esp-web-install-button manifest="firmware/manifest.json">
-        <button slot="activate" type="button">Install firmware</button>
-        <span slot="unsupported" class="unsupported">Use a Chromium-based browser with Web Serial support.</span>
-      </esp-web-install-button>
-
+      <button id="install" type="button">Install firmware</button>
       <a href="./" class="button-link">Open programmer</a>
     </div>
-
-    <p class="install-note">After installation, return to the programmer to read or write an iButton.</p>
+    <pre id="install-log" class="install-log" aria-live="polite"></pre>
+    <p class="install-note">Requires a Chromium-based browser with Web Serial. Supports the common Nano ATmega328P bootloaders at 115200 and 57600 baud.</p>
   </main>
-
   <script src="particles.js" defer></script>
+  <script type="module" src="nano-installer.js"></script>
 </body>
 </html>
