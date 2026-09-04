@@ -5,6 +5,7 @@ const connectButton = document.querySelector('#connect');
 const readButton = document.querySelector('#read');
 const writeButton = document.querySelector('#write');
 const clearLogButton = document.querySelector('#clear-log');
+const copyLogButton = document.querySelector('#copy-log');
 const protocolLog = document.querySelector('#protocol-log');
 const serialFields = [...document.querySelectorAll('.serial-byte')];
 const serialFieldsContainer = document.querySelector('#serial-fields');
@@ -148,6 +149,17 @@ serialFieldsContainer.addEventListener('paste', event => {
 });
 
 clearLogButton.addEventListener('click', () => { protocolLog.textContent = ''; });
+copyLogButton.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(protocolLog.textContent);
+    const original = copyLogButton.textContent;
+    copyLogButton.textContent = 'Copied';
+    setTimeout(() => { copyLogButton.textContent = original; }, 1200);
+  } catch {
+    message.className = 'message error';
+    message.textContent = 'Could not copy the protocol log.';
+  }
+});
 
 async function connect() {
   if (!('serial' in navigator)) throw new Error('This browser does not support Web Serial. Use a compatible Chromium-based desktop browser.');
