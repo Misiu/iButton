@@ -13,6 +13,10 @@
 #define LED_ACTIVE_HIGH 1
 #endif
 
+#ifndef ENABLE_RW1990_WRITE
+#define ENABLE_RW1990_WRITE 0
+#endif
+
 static constexpr uint32_t SERIAL_BAUD = 9600;
 static constexpr size_t COMMAND_SIZE = 11;
 static constexpr uint32_t TOUCH_TIMEOUT_MS = 10000;
@@ -87,14 +91,13 @@ void printRom(const uint8_t rom[8]) {
   Serial.println();
 }
 
-// First try: exact programming sequence recovered from the known-working legacy Nano.
 bool writeLegacyNano(const uint8_t rom[8]) {
-  oneWire.skip();                 // 0xCC
+  oneWire.skip();
   oneWire.reset();
-  oneWire.write(0x33);            // Read ROM preamble used by the legacy firmware
-  oneWire.skip();                 // 0xCC
+  oneWire.write(0x33);
+  oneWire.skip();
   oneWire.reset();
-  oneWire.write(0xD5);            // Write ROM
+  oneWire.write(0xD5);
   programRw1990Rom(rom, false);
   oneWire.reset();
   return verifyRom(rom);
@@ -108,28 +111,24 @@ void setRwWriteFlag(uint8_t command, bool flag) {
   releaseOneWireLine();
 }
 
-// RW1990.1 algorithm used by common Arduino duplicators:
-// D1 flag is inverted; bytes are programmed inverted.
 bool writeRw1990_1(const uint8_t rom[8]) {
-  setRwWriteFlag(0xD1, false);     // enable write
+  setRwWriteFlag(0xD1, false);
   if (!oneWire.reset()) return false;
   oneWire.write(0xD5);
   programRw1990Rom(rom, true);
-  setRwWriteFlag(0xD1, true);      // disable write
+  setRwWriteFlag(0xD1, true);
   return verifyRom(rom);
 }
 
-// RW1990.2 algorithm used by common Arduino duplicators:
-// 1D flag has normal polarity; bytes are programmed normally.
 bool writeRw1990_2(const uint8_t rom[8]) {
-  setRwWriteFlag(0x1D, true);      // enable write
+  setRwWriteFlag(0x1D, true);
   if (!oneWire.reset()) {
     setRwWriteFlag(0x1D, false);
     return false;
   }
   oneWire.write(0xD5);
   programRw1990Rom(rom, false);
-  setRwWriteFlag(0x1D, false);     // disable write
+  setRwWriteFlag(0x1D, false);
   return verifyRom(rom);
 }
 
@@ -154,6 +153,11 @@ void handleRead() {
 }
 
 void handleWrite(const uint8_t command[COMMAND_SIZE]) {
+#if !ENABLE_RW1990_WRITE
+  (void)command;
+  Serial.println("ERROR WRITE_DISABLED_3V3");
+  return;
+#else
   const uint8_t *rom = command + 2;
   if (OneWire::crc8(rom, 7) != rom[7]) {
     Serial.println("ERROR ROM_CRC");
@@ -176,6 +180,7 @@ void handleWrite(const uint8_t command[COMMAND_SIZE]) {
     return;
   }
   Serial.println("OK");
+#endif
 }
 
 void processCommand(const uint8_t command[COMMAND_SIZE]) {
