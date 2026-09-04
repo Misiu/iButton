@@ -2,10 +2,12 @@ const BAUD_RATE = 9600;
 const INFO_TIMEOUT_MS = 1500;
 const READ_TIMEOUT_MS = 6500;
 const WRITE_TIMEOUT_MS = 10000;
+const DETECT_TIMEOUT_MS = 6500;
 
 const connectButton = document.querySelector('#connect');
 const readButton = document.querySelector('#read');
 const writeButton = document.querySelector('#write');
+const detectButton = document.querySelector('#detect');
 const clearLogButton = document.querySelector('#clear-log');
 const copyLogButton = document.querySelector('#copy-log');
 const protocolLog = document.querySelector('#protocol-log');
@@ -70,7 +72,7 @@ serialFields.forEach((field, index) => {
 });
 serialFieldsContainer.addEventListener('paste', event => { event.preventDefault(); distributeHex(event.clipboardData.getData('text'), Math.max(0, serialFields.indexOf(document.activeElement))); });
 clearLogButton.addEventListener('click', () => { protocolLog.textContent = ''; });
-copyLogButton.addEventListener('click', async () => { try { await navigator.clipboard.writeText(protocolLog.textContent); const original = copyLogButton.textContent; copyLogButton.textContent = 'Copied'; setTimeout(() => { copyLogButton.textContent = original; }, 1200); } catch { message.className = 'message error'; message.textContent = 'Could not copy the protocol log.'; } });
+copyLogButton.addEventListener('click', async () => { try { await navigator.clipboard.writeText(protocolLog.textContent); const original = copyLogButton.textContent; copyLogButton.textContent = 'Copied'; setTimeout(() => { copyLogButton.textContent = original; }, 1200); } catch { message.className = 'message error'; message.textContent = 'Could not copy the debug log.'; } });
 
 async function writeText(text) {
   if (!port?.writable) throw new Error('The programmer is not connected.');
@@ -126,9 +128,11 @@ async function connect() {
 }
 async function disconnect() { if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock(); reader = undefined; } if (port) await port.close().catch(() => {}); port = undefined; deviceInfo = null; receiveBuffer = ''; logProtocol('INFO', 'disconnected'); setConnected(false); }
 function setConnected(connected) { programmer.hidden = !connected; status.textContent = connected ? 'Connected' : 'Disconnected'; status.className = `status ${connected ? 'connected' : 'disconnected'}`; connectButton.textContent = connected ? 'Disconnect device' : 'Connect device'; }
-async function runBusy(fn) { readButton.disabled = true; writeButton.disabled = true; message.className = 'message'; message.textContent = ''; try { await fn(); } catch (error) { logProtocol('ERR ', error.message ?? String(error)); message.className = 'message error'; message.textContent = error.message ?? String(error); } finally { readButton.disabled = false; writeButton.disabled = false; } }
+function setBusy(busy) { readButton.disabled = busy; writeButton.disabled = busy; detectButton.disabled = busy; }
+async function runBusy(fn) { setBusy(true); message.className = 'message'; message.textContent = ''; try { await fn(); } catch (error) { logProtocol('ERR ', error.message ?? String(error)); message.className = 'message error'; message.textContent = error.message ?? String(error); } finally { setBusy(false); } }
 
 connectButton.addEventListener('click', async () => { try { if (port) await disconnect(); else await connect(); } catch (error) { if (port) await disconnect().catch(() => {}); message.className = 'message error'; message.textContent = error.message ?? String(error); } });
 readButton.addEventListener('click', () => runBusy(async () => { message.textContent = 'Touch an iButton to the reader...'; const response = await command('READ', READ_TIMEOUT_MS); setSerial(parseReadResponse(response)); message.className = 'message success'; message.textContent = 'Serial number read successfully.'; }));
 writeButton.addEventListener('click', () => runBusy(async () => { const normalized = getSerial(); setSerial(normalized); message.textContent = 'Touch a writable iButton to the reader...'; const response = await command(`WRITE ${normalized}`, WRITE_TIMEOUT_MS); if (response.startsWith('ERROR ')) throw new Error(parseDeviceError(response)); if (!response.startsWith('OK WRITE')) throw new Error(response || 'Failed to write the serial number.'); message.className = 'message success'; message.textContent = 'Serial number written and verified successfully.'; }));
+detectButton.addEventListener('click', () => runBusy(async () => { message.textContent = 'Touch a writable iButton to detect its type...'; const response = await command('DETECT', DETECT_TIMEOUT_MS); if (response.startsWith('ERROR ')) throw new Error(parseDeviceError(response)); const match = /^OK DETECT TYPE=([^ ]+)$/i.exec(response); if (!match) throw new Error(`Invalid device response: ${response}`); message.className = 'message success'; message.textContent = `Detected iButton type: ${match[1]}.`; }));
 navigator.serial?.addEventListener('disconnect', event => { if (event.target === port) { port = undefined; deviceInfo = null; receiveBuffer = ''; setConnected(false); logProtocol('INFO', 'device disconnected'); message.className = 'message error'; message.textContent = 'The programmer was disconnected.'; } });
