@@ -162,8 +162,11 @@ async function writeBytes(bytes) {
   }
 }
 
-async function waitForIncomingData(timeoutMs) {
-  if (receiveBuffer.length || readFailure) return;
+async function waitForIncomingData(previousLength, timeoutMs) {
+  // Web Serial is allowed to split one STK500 response into arbitrary chunks.
+  // When part of a response is already buffered, wait for the buffer to grow;
+  // treating any non-empty buffer as ready would spin and starve the read loop.
+  if (receiveBuffer.length > previousLength || readFailure) return;
 
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -190,8 +193,10 @@ async function readExact(count, timeoutMs = 1500) {
     if (remaining <= 0) {
       throw new Error(`Bootloader response timeout (${receiveBuffer.length}/${count} bytes).`);
     }
+
+    const previousLength = receiveBuffer.length;
     try {
-      await waitForIncomingData(remaining);
+      await waitForIncomingData(previousLength, remaining);
     } catch {
       throw new Error(`Bootloader response timeout (${receiveBuffer.length}/${count} bytes).`);
     }
@@ -402,6 +407,8 @@ installButton.addEventListener('click', async () => {
   setProgress(0);
   setStatus('Preparing installation...');
 
+  let stage = 'preparing';
+
   try {
     if (!('serial' in navigator)) {
       throw new Error('Web Serial is not supported. Use Chrome or Edge on a desktop computer.');
@@ -415,16 +422,23 @@ installButton.addEventListener('click', async () => {
     const baudRate = await connectBootloader();
     writeLog(`ATmega328P bootloader connected at ${baudRate} baud.`);
 
+    stage = 'programming';
     await programFlash(firmware.image);
+    stage = 'verifying';
     await verifyFlash(firmware.image);
     await stkCommand([STK_LEAVE_PROGMODE], 0, 1500);
 
+    stage = 'complete';
     setProgress(100);
     setStatus(`Firmware ${firmware.version} installed and verified successfully.`, 'success');
     writeLog('Installation and flash verification completed successfully.');
   } catch (error) {
-    setStatus(error.message ?? String(error), 'error');
-    writeLog(`ERROR: ${error.message ?? String(error)}`);
+    const details = error.message ?? String(error);
+    const prefix = stage === 'verifying'
+      ? 'Firmware was written but could not be verified. Do not use the programmer until installation finishes successfully. '
+      : '';
+    setStatus(`${prefix}${details}`, 'error');
+    writeLog(`ERROR: ${details}`);
   } finally {
     await closeSession();
     port = undefined;
