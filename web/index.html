@@ -49,9 +49,11 @@
         <div class="protocol-toolbar">
           <span>Protocol diagnostics</span>
           <div class="debug-actions">
-            <button id="detect" type="button" class="log-button" disabled>Detect button type</button>
-            <button id="copy-log" type="button" class="log-button">Copy</button>
-            <button id="clear-log" type="button" class="log-button">Clear</button>
+            <button id="detect" type="button" class="debug-detect-button" disabled>Detect button type</button>
+            <div class="debug-log-actions">
+              <button id="copy-log" type="button" class="log-button">Copy</button>
+              <button id="clear-log" type="button" class="log-button">Clear</button>
+            </div>
           </div>
         </div>
         <pre id="protocol-log" class="protocol-log" aria-label="Debug log"></pre>
