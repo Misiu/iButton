@@ -276,9 +276,33 @@ label {
 
 .debug-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 10px;
+}
+
+.debug-log-actions {
+  display: flex;
+  align-items: center;
   gap: 4px;
+}
+
+.debug-detect-button {
+  min-height: 0;
+  padding: 5px 10px;
+  border-radius: 7px;
+  background: var(--primary-dark);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 103, 135, .22);
+}
+
+.debug-detect-button:hover:not(:disabled) {
+  background: var(--write-button);
 }
 
 .log-button {
